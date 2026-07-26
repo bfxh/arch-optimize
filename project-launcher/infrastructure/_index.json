@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "description": "基础设施文件索引 - 记录每个目录的内容和状态",
+  "game": {
+    "path": "infrastructure/game/",
+    "subdirs": ["engines", "rendering", "physics", "audio", "assets"],
+    "status": "template",
+    "last_updated": null,
+    "knowledge_count": 0
+  },
+  "software": {
+    "path": "infrastructure/software/",
+    "subdirs": ["patterns", "testing", "ci-cd", "security"],
+    "status": "template",
+    "last_updated": null,
+    "knowledge_count": 0
+  },
+  "text": {
+    "path": "infrastructure/text/",
+    "subdirs": ["academic", "creative", "technical"],
+    "status": "template",
+    "last_updated": null,
+    "knowledge_count": 0
+  },
+  "index_rules": {
+    "auto_update": "每次获取新知识后自动更新此索引",
+    "track_count": "记录每个目录下的知识文件数量",
+    "track_status": "template=模板 / populated=已填充 / stale=过期"
+  }
+}

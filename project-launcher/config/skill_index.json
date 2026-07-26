@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "description": "项目启动器技能激活索引 - 控制每次启动时默认调用哪些子技能",
+  "skills": {
+    "domain": {
+      "active": true,
+      "priority": 1,
+      "name": "项目专属技能",
+      "description": "根据项目类型拉取对应领域技能（game/software/text）",
+      "configurable": true,
+      "auto_detect": true
+    },
+    "arch": {
+      "active": true,
+      "priority": 2,
+      "name": "架构技能",
+      "description": "独立架构审查，调用 arch-optimize 执行架构感知→风险诊断→质量度量",
+      "configurable": true,
+      "isolated": true
+    },
+    "pulled": {
+      "active": false,
+      "priority": 3,
+      "name": "拉取的领域技能",
+      "description": "根据具体需求从外部拉取专门技能，默认不激活",
+      "configurable": true,
+      "auto_detect": false
+    },
+    "doc": {
+      "active": true,
+      "priority": 4,
+      "name": "文档技能",
+      "description": "负责撰写所有项目文档，要求内容详实不搞空壳",
+      "configurable": true
+    },
+    "req": {
+      "active": true,
+      "priority": 5,
+      "name": "需求技能",
+      "description": "反复搞明白用户真实需求，含反问+展示历史素材",
+      "configurable": false,
+      "mandatory": true
+    }
+  },
+  "defaults": {
+    "new_project": ["req", "domain", "arch", "doc"],
+    "refactor": ["req", "arch", "pulled", "doc"],
+    "writing": ["req", "doc"]
+  },
+  "project_type_detection": {
+    "game": ["游戏", "game", "engine", "引擎", "渲染", "物理模拟", "voxel", "体素"],
+    "software": ["软件", "software", "app", "服务", "API", "后端", "前端", "系统"],
+    "text": ["论文", "小说", "文档", "文章", "报告", "写作", "thesis", "novel"]
+  },
+  "adjustment_notes": {
+    "how_to": "用户可随时修改此文件调整技能激活状态。将 active 设为 false 即可跳过该技能。",
+    "pulled_skill": "pulled 技能默认不激活，需要时手动设为 true 或由 req-skill 自动判断",
+    "arch_isolation": "arch 技能标记为 isolated，执行时与其他技能隔离，不受干扰"
+  }
+}
