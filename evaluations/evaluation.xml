@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  arch_optimize MCP Server Evaluation
+  ===================================
+  10 QA pairs testing whether an LLM can effectively use the arch_optimize
+  MCP server tools to answer realistic architecture analysis questions.
+
+  Target directory: .trae/skills/arch-optimize/ (stable, self-referential)
+  All questions are read-only and independently answerable.
+-->
+<evaluation>
+  <qa_pair>
+    <question>Using the arch_optimize MCP server, scan the architecture of the arch-optimize skill directory (.trae/skills/arch-optimize). How many Python scripts are found in the scripts subdirectory? List the entry points detected.</question>
+    <answer>6 Python scripts: arch_scan.py, dep_graph.py, mcp_server.py, quality_metrics.py, regression_guard.py, risk_diagnose.py. Entry point: mcp_server.py (contains __main__ block).</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use the arch_optimize_dep_graph tool to analyze the dependency graph of the arch-optimize scripts directory (.trae/skills/arch-optimize). How many modules are detected and are there any circular dependencies?</question>
+    <answer>1 module detected (scripts), 0 circular dependencies. The scripts have no inter-file import edges because each script is self-contained.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Using arch_optimize_risk_diagnose, scan the arch-optimize skill directory for R1 (Cognitive Overload) risks only. How many Critical R1 findings are reported? Name the function with the highest cyclomatic complexity.</question>
+    <answer>Multiple Critical R1 findings (at least 5). The function with the highest CC is build_dependency_graph in dep_graph.py with CC=37.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use arch_optimize_quality_metrics to analyze the arch-optimize scripts directory. What is the health score grade? Is the average Maintainability Index (MI) above or below 15?</question>
+    <answer>Health score grade is "危险" (Dangerous). Average MI is approximately 10.18, which is below 15.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Using arch_optimize_quality_metrics with min_cc=15, which functions in the arch-optimize scripts directory have cyclomatic complexity >= 15? List each function name and its CC value.</question>
+    <answer>Two functions: build_dependency_graph (CC=37, dep_graph.py) and detect_frameworks (CC=24, arch_scan.py). Also analyze_modules (CC=21, arch_scan.py) qualifies.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use arch_optimize_risk_diagnose to scan the arch-optimize skill directory with min_severity=Critical. How many total Critical findings are there across all six risk categories (R1-R6)?</question>
+    <answer>32 Critical findings across R1-R6 risks.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Using arch_optimize_scan, what architecture documents are detected in the arch-optimize skill directory? List all found documentation files.</question>
+    <answer>5 architecture documents detected: references/architecture-principles.md, references/coding-conventions.md, references/collaboration-workflow.md, references/quality-metrics.md, references/regression-guard.md. Plus SKILL.md at the root.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use arch_optimize_quality_metrics to analyze a single file: .trae/skills/arch-optimize/scripts/mcp_server.py. What is the total logical LOC and how many functions are analyzed?</question>
+    <answer>The file contains multiple functions including arch_optimize_scan, arch_optimize_dep_graph, arch_optimize_risk_diagnose, arch_optimize_quality_metrics, arch_optimize_regression_guard, _run_script, _regression_record, _regression_compare, _regression_evoscore. Total logical LOC is approximately 300+.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Using arch_optimize_risk_diagnose, scan only for R5 (Dependency Disorder) risks in the arch-optimize skill directory. Are any circular dependencies detected as Critical R5 findings?</question>
+    <answer>No R5 Critical findings for circular dependencies. The scripts module has no circular deps (confirmed by dep_graph analysis). R5 findings, if any, are about dependency direction, not cycles.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Use arch_optimize_scan to identify the tech stack of the arch-optimize skill directory. What programming language(s) and framework(s) are detected?</question>
+    <answer>Python detected (all .py files). Framework: FastMCP (mcp.server.fastmcp) for the MCP server, Pydantic for input validation. No build system or test framework auto-detected in the scripts directory.</answer>
+  </qa_pair>
+</evaluation>
