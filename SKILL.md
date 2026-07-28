@@ -1,7 +1,7 @@
 ---
 name: "arch-optimize"
-description: "架构优化技能：融合SWE-CI演进质量评估、六大衰退风险扫描和架构师-程序员双智能体协作，提供编码规范、质量度量与回归防护。内置5个可执行脚本（arch_scan/risk_diagnose/quality_metrics/dep_graph/regression_guard），支持AI智能体直接调用获取结构化JSON数据。在需要架构审查、技术债评估、代码重构、质量提升时调用。"
-version: "2.0"
+description: "架构优化技能：融合SWE-CI演进质量评估、六大衰退风险扫描和架构师-程序员双智能体协作，提供编码规范、质量度量与回归防护。内置5个可执行脚本（arch_scan/risk_diagnose/quality_metrics/dep_graph/regression_guard），支持AI智能体直接调用获取结构化JSON数据。在需要架构审查、技术债评估、代码重构、质量提升时调用。内置 AAA 级视觉质量保障协议，通过子代理分发与严格批评家迭代循环确保交付物达到极致完美。"
+version: "3.1"
 ---
 
 # 架构优化技能 (Architecture Optimization)
@@ -192,7 +192,8 @@ python3 scripts/regression_guard.py evoscore --history history.json --gamma 1.5
 | `references/coding-conventions.md` | C/C++/Rust/Go/TypeScript 编码规范、错误处理、命名约定 |
 | `references/quality-metrics.md` | MI 公式、EvoScore 演进评分、健康分、Pain×Spread 矩阵、SQALE 技术债 |
 | `references/regression-guard.md` | 零退化率、回归检测模式、非对称评分、CI 门禁配置 |
-| `references/collaboration-workflow.md` | 架构师-程序员分工、信息隔离、增量优化策略、反馈循环 |
+| `references/collaboration-workflow.md` | 架构师-程序员分工、信息隔离、增量优化策略、反馈循环、子代理分发与批评家迭代 |
+| `references/aaa-quality-protocol.md` | AAA 级视觉质量保障协议、四维度评分标准、批评家否决规则、迭代循环流程 |
 
 ## 脚本工具集 (Script Toolkit)
 
@@ -351,6 +352,43 @@ AI智能体可按以下模式调用脚本：
 | 决策记录 | arch-optimize + archcore:decide |
 | 编码前上下文 | archcore:context -> arch-optimize(阶段四) |
 
+## AAA 级视觉质量保障 (AAA Visual Quality Assurance)
+
+### 核心理念
+
+- **分派子代理**，每个子代理单独负责一部分，让项目达到极致完美
+- 对每个项目进行**循环检查**，由独立的视觉审查子代理确保 AAA 级品质
+- 视觉审查子代理是**非常严厉的批评家**，不达 AAA 级就继续迭代
+- **不停止**，直到每个子代理都对质量感到惊叹
+
+### 子代理分发协议
+
+| 角色 | 职责 | 执行条件 |
+|------|------|---------|
+| 架构师子代理 | 战略层规划，高层次需求 | 阶段一~三 |
+| 程序员子代理 | 执行层实现，代码修改 | 阶段四 |
+| 视觉批评家子代理 | AAA 级视觉审查，迭代否决 | 每次交付前 |
+| 回归守卫子代理 | 测试基线对比，零退化检查 | 阶段五 |
+
+### AAA 级视觉审查循环
+
+```mermaid
+flowchart TD
+    A[子代理分发] --> B[各部分独立执行]
+    B --> C[视觉批评家审查]
+    C --> D{达到AAA级？}
+    D -->|是| E[通过交付]
+    D -->|否| F[迭代修复]
+    F --> B
+```
+
+### 质量惊叹标准
+
+- **代码**：经得起逐行审视，无死代码、无占位符、无假实现
+- **架构**：层次清晰，依赖有序，领域模型忠实
+- **文档**：内容详实，每段有实质信息，无套话
+- **视觉**：排版美观，表格/代码块/图表搭配得当
+
 ## 设计理念
 
 本技能的设计基于以下原则：
@@ -364,3 +402,5 @@ AI智能体可按以下模式调用脚本：
 7. **假阳性防护**：避免将设计模式正常用法误判为违规
 8. **可执行优于纯文档**：所有理论公式和检测规则均有对应脚本实现，AI智能体可直接调用获取量化数据（v2.0升级）
 9. **协议化优于命令行**：MCP插件封装使工具可被任意AI智能体通过标准协议发现和调用，无需解析CLI用法（v3.0升级）
+10. **AAA 级视觉质量**：每个交付物必须通过独立视觉批评家子代理的 AAA 级审查，不达标准继续迭代，直到质量令人惊叹
+11. **子代理分发协作**：将任务分派给独立子代理并行执行，每个子代理负责一个方面，视觉批评家子代理作为最终质量门禁
