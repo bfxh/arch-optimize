@@ -17,7 +17,8 @@ Design: Each tool wraps an existing CLI script via subprocess, passing the
 self-contained and no import-path coupling is introduced.
 
 Environment: Python 3.10+, ``mcp`` package v1.28.1 (FastMCP from
-``mcp.server.fastmcp``).
+``mcp.server.fastmcp``). NOTE: mcp 2.x removed FastMCP; install mcp<2:
+    pip install "mcp>=1.28.1,<2"
 """
 
 import json
@@ -26,7 +27,14 @@ import subprocess
 import sys
 from typing import Annotated, Literal, Optional
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    print(
+        'mcp_server.py 需要 mcp<2（FastMCP API）：pip install "mcp>=1.28.1,<2"',
+        file=sys.stderr,
+    )
+    sys.exit(1)
 from pydantic import Field
 
 # ── Setup ──────────────────────────────────────────────────────────────────

@@ -91,7 +91,7 @@ pip install -e .
 ### Dependencies
 
 ```
-mcp>=1.28.1
+mcp>=1.28.1,<2
 pydantic>=2.0.0
 ```
 

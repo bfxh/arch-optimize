@@ -58,4 +58,15 @@
     <question>Use arch_optimize_scan to identify the tech stack of the arch-optimize skill directory. What programming language(s) and framework(s) are detected?</question>
     <answer>Python detected (all .py files). Framework: FastMCP (mcp.server.fastmcp) for the MCP server, Pydantic for input validation. No build system or test framework auto-detected in the scripts directory.</answer>
   </qa_pair>
+
+  <!-- 本地增强 QA（v3.0 整合后新增）：AI 味检测 + 协同维度 -->
+  <qa_pair>
+    <question>Using the local anti-AI-flavor script (scripts/detect_code_ai.py, not an MCP tool), scan E:\共享\51\skill-build\code-review\testdata\app.py. Which AI-flavor pattern categories are reported? Name at least one DEAD-* pattern found and its severity.</question>
+    <answer>Run: python3 scripts/detect_code_ai.py --file E:\共享\51\skill-build\code-review\testdata\app.py --json. Expect DEAD-002 (placeholder/TODO) or DEAD-001 (dead code) patterns; app.py contains unused imports (requests) and a dead helper function (unused_helper) which map to DEAD-001 (dead code, Critical/Warning per config). The exact hit list must be confirmed from the --json output.</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>For a code review workflow combining arch-optimize with the local review-scan.py (7-dimension code review), which script covers the safety dimension (command injection, SQL injection, hardcoded secrets) and which covers architecture health (R1-R6 decay risks)?</question>
+    <answer>review-scan.py covers the safety dimension via its sec category (SEC-CMD/SEC-SQL/SEC-SECRET rules) and also provides quality/dup/dead/cycle/diff/complexity dimensions; arch-optimize's risk_diagnose.py covers architecture health via R1-R6 decay risk scanning. The two complement each other: review-scan finds code-level defects, arch-optimize finds architecture-level decay.</answer>
+  </qa_pair>
 </evaluation>
