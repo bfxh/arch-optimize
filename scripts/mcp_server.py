@@ -272,7 +272,9 @@ async def arch_optimize_quality_metrics(
     annotations={
         "title": "Regression Guard",
         "readOnlyHint": False,
-        "destructiveHint": False,
+        # 安全：test_cmd 会以 shell=True 执行任意命令（stdio 本地信任模型内为设计能力，
+        # 但必须让客户端做破坏性确认；若改 HTTP/SSE 远程传输前必须先白名单化 test_cmd）
+        "destructiveHint": True,
         "idempotentHint": False,
         "openWorldHint": True,
     },

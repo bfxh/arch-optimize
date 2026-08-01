@@ -222,7 +222,7 @@ function Install-GodotMCP {
 
     $addonsDir = Join-Path $ProjectPath "addons"
     $installDir = Join-Path $addonsDir "meow_godot_mcp"
-    $zipPath = Join-Path $env:TEMP "meow-godot-mcp.zip"
+    $zipPath = Join-Path $env:TEMP ("meow-godot-mcp-" + [guid]::NewGuid().ToString("N") + ".zip")
 
     if (Test-Path $installDir) {
         Write-Step "Godot MCP 已安装: $installDir" "OK" "Green"
@@ -246,6 +246,15 @@ function Install-GodotMCP {
         Write-Step "解压到: $installDir" "INFO" "Yellow"
         return
     }
+
+    # 供应链校验：必须是有效 zip（PK 头），防止下载损坏或被替换
+    $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
+    if ($zipBytes.Length -lt 4 -or $zipBytes[0] -ne 0x50 -or $zipBytes[1] -ne 0x4B) {
+        Write-Step "校验失败：下载文件不是有效 zip，已阻止解压" "ERROR" "Red"
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+    Write-Step "zip 校验通过（$($zipBytes.Length) 字节）" "OK" "Green"
 
     # 解压
     Write-Step "解压到: $installDir" "RUN" "Yellow"
@@ -1209,6 +1218,11 @@ switch ($Mode) {
             }
             "remove" {
                 if (-not $pluginName) { Write-Host "请指定插件名"; return }
+                # 安全：插件名白名单校验，拒绝路径穿越（../ 等）
+                if ($pluginName -notmatch '^[A-Za-z0-9_-]+$') {
+                    Write-Step "插件名非法（仅允许字母/数字/_-）: $pluginName" "ERROR" "Red"
+                    return
+                }
                 $pluginDir = Join-Path (Get-Location) "addons" $pluginName
                 if (Test-Path $pluginDir) {
                     Remove-Item -Path $pluginDir -Recurse -Force
