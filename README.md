@@ -203,7 +203,7 @@ arch-optimize/
 │   ├── regression-guard.md           # Zero regression rate, asymmetric scoring
 │   └── collaboration-workflow.md     # Architect-programmer collaboration
 └── evaluations/
-    └── evaluation.xml                # 10 QA pairs for MCP tool evaluation
+    └── evaluation.xml                # 12 QA pairs for MCP tool evaluation
 ```
 
 ## License

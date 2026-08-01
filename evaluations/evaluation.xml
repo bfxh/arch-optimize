@@ -61,12 +61,12 @@
 
   <!-- 本地增强 QA（v3.0 整合后新增）：AI 味检测 + 协同维度 -->
   <qa_pair>
-    <question>Using the local anti-AI-flavor script (scripts/detect_code_ai.py, not an MCP tool), scan E:\共享\51\skill-build\code-review\testdata\app.py. Which AI-flavor pattern categories are reported? Name at least one DEAD-* pattern found and its severity.</question>
-    <answer>Run: python3 scripts/detect_code_ai.py --file E:\共享\51\skill-build\code-review\testdata\app.py --json. Expect DEAD-002 (placeholder/TODO) or DEAD-001 (dead code) patterns; app.py contains unused imports (requests) and a dead helper function (unused_helper) which map to DEAD-001 (dead code, Critical/Warning per config). The exact hit list must be confirmed from the --json output.</answer>
+    <question>Using the local anti-AI-flavor script (scripts/detect_code_ai.py, not an MCP tool), scan this repository's scripts directory (scripts/). Which DEAD-* pattern categories are expected to appear in the scripts themselves? Name at least one DEAD-* pattern and its severity.</question>
+    <answer>Run: python3 scripts/detect_code_ai.py --target scripts --json. The scripts contain debug prints (print/Write-Host), bare exception handlers, and helper functions that are defined but never called; these map to DEAD-001 (dead code, Critical) and DEAD-008 (fake error handling, Critical) per the pattern catalog in references/ai-patterns-catalog.md. The exact hit list is obtained from the --json output and depends on the current script contents.</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>For a code review workflow combining arch-optimize with the local review-scan.py (7-dimension code review), which script covers the safety dimension (command injection, SQL injection, hardcoded secrets) and which covers architecture health (R1-R6 decay risks)?</question>
-    <answer>review-scan.py covers the safety dimension via its sec category (SEC-CMD/SEC-SQL/SEC-SECRET rules) and also provides quality/dup/dead/cycle/diff/complexity dimensions; arch-optimize's risk_diagnose.py covers architecture health via R1-R6 decay risk scanning. The two complement each other: review-scan finds code-level defects, arch-optimize finds architecture-level decay.</answer>
+    <question>Within arch-optimize itself, which two scripts form the complementary review pair: one detects AI-flavor patterns (DEAD-001..010) in generated code, and one scans R1-R6 architecture decay risks? What is the recommended invocation order for a pre-merge review?</question>
+    <answer>scripts/detect_code_ai.py detects AI-flavor patterns (DEAD-001..010 with Blocker/Critical/Warning severities) and scripts/risk_diagnose.py scans R1-R6 decay risks (Symptom->Source->Consequence->Remedy findings). Recommended order: run detect_code_ai.py first (fast, deterministic), fix Blocker/Critical hits, then run risk_diagnose.py for architecture-level risks, then arch_optimize_quality_metrics for MI/CC baseline. The pair complements each other: code-level authenticity (AI flavor) vs architecture-level decay.</answer>
   </qa_pair>
 </evaluation>

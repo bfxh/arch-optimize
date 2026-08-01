@@ -19,7 +19,7 @@ allowed-tools: read_file, write_file, edit_file, grep, glob, bash
 3. **架构师-程序员双智能体协作**：战略层与执行层分离，避免上帝视角
 4. **反AI味检测**（本 v2.1 新增）：18 个 AI 特有低质量模式扫描，确保交付物经得起人类逐行审视
 
-**v2.5 核心升级**：
+**v3.0 核心升级（含 v2.5 历史）**：
 - **本地漏洞挖掘脚本**：新增 `scripts/vuln-scan.ps1`，全本地执行，覆盖 GDScript 安全(15种模式)、Rust 不安全模式(15种)、MCP 配置审计(10种)、密钥泄露(20种)、依赖审计、C/C++ 安全检测(10种)、配置安全审计
 - **Workflow CLI v2.2**：新增 `local-scan` 命令，`vuln-hunt` 改为本地脚本优先 + MCP 辅助，新增 `audit` 和 `hardening` 命令
 - **本地优先原则**：挖漏洞以本地脚本为主，MCP 工具为辅，不依赖任何外部 API
