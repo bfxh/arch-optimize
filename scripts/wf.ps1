@@ -59,8 +59,8 @@ $CONFIG = @{
     GodotMCPUrl  = "https://github.com/MeowMeowZi/meow-godot-mcp/releases/download/v1.6/v1.6-windows-x86_64.zip"
 
     # 全局 MCP 配置
-    CodebaseMemory = "D:\开发\codebase-memory-mcp\codebase-memory-mcp.exe"
-    AetherBridge   = "D:\开发\aether-trae-bridge\bin\aether-bridge.exe"
+    CodebaseMemory = "D:\开发\codebase-memory-mcp\bin\codebase-memory-mcp.exe"
+    Srclight       = "C:\Users\lbx13\AppData\Local\Programs\Python\Python311\Scripts\srclight.exe"
 
     # 本地漏洞挖掘脚本
     VulnScript = [System.IO.Path]::Combine($PSScriptRoot, "vuln-scan.ps1")
@@ -176,8 +176,8 @@ function Invoke-MCPTool {
                 }
             }
         }
-        "aether-bridge" {
-            if (Test-Path $CONFIG.AetherBridge) {
+        "srclight" {
+            if (Test-Path $CONFIG.Srclight) {
                 $payload = @{
                     jsonrpc = "2.0"
                     id = 1
@@ -188,10 +188,10 @@ function Invoke-MCPTool {
                     }
                 } | ConvertTo-Json -Compress -Depth 10
                 try {
-                    $result = $payload | & $CONFIG.AetherBridge 2>&1
+                    $result = $payload | & $CONFIG.Srclight 2>&1
                     return $result
                 } catch {
-                    Write-Step "aether-bridge 调用失败: $_" "WARN" "DarkYellow"
+                    Write-Step "srclight 调用失败: $_" "WARN" "DarkYellow"
                 }
             }
         }
@@ -426,10 +426,10 @@ function Invoke-VulnHunt {
     $mcpResult = Invoke-MCPTool -ServerName "codebase-memory" -ToolName "search_code" -ArgsJson "{`"query`":`"vulnerability|security|injection|overflow|unsafe|panic|unwrap`",`"path`":`"$ProjectPath`"}"
     if ($mcpResult) { $report += "`n### codebase-memory: search_code`n$mcpResult`n" }
 
-    # ── 阶段 3: MCP Aether-Bridge 代码分析（辅助） ──
-    Write-Step "[3/5] 调用 aether-bridge: 安全分析（辅助）" "MCP" "Magenta"
-    $mcpResult = Invoke-MCPTool -ServerName "aether-bridge" -ToolName "code_analysis" -ArgsJson "{`"path`":`"$ProjectPath`",`"check`":`"security`"}"
-    if ($mcpResult) { $report += "`n### aether-bridge: code_analysis`n$mcpResult`n" }
+    # ── 阶段 3: MCP Srclight 语义安全搜索（辅助） ──
+    Write-Step "[3/5] 调用 srclight: 语义安全搜索（辅助）" "MCP" "Magenta"
+    $mcpResult = Invoke-MCPTool -ServerName "srclight" -ToolName "semantic_search" -ArgsJson "{`"query`":`"vulnerability security injection overflow unsafe panic unwrap`"}"
+    if ($mcpResult) { $report += "`n### srclight: semantic_search`n$mcpResult`n" }
 
     # ── 阶段 4: Godot MCP 游戏测试 ──
     $godotProj = Join-Path $ProjectPath "project.godot"
@@ -1030,7 +1030,7 @@ Godot MCP 操作:
 
 MCP 集成工具:
   codebase-memory-mcp — 代码知识图谱搜索
-  aether-bridge       — IDE 自动补全 + 代码 RAG
+  srclight            — 本地代码语义搜索 + 调用图（42 工具）
   godot-mcp-bridge    — Godot 编辑器/游戏控制 (Meow Godot MCP)
 
 本地漏洞挖掘脚本 (vuln-scan.ps1 v2.0 — 7 维度):

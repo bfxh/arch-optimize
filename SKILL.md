@@ -2,7 +2,7 @@
 name: "arch-optimize"
 description: "架构优化技能 v3.0：对工程负责的根哲学——融合 SWE-CI 演进质量评估、六大衰退风险扫描、架构师-程序员双智能体协作、反AI味检测、项目结构约定（src+bin分离）、游戏开发技能合并（含 Godot MCP 集成 + 本地漏洞挖掘脚本 vuln-scan.ps1、C/C++ 安全检测(10种)、配置安全审计）、Ponytail 懒人模式、文档技术方向/实现愿景模板、Workflow CLI v2.2、官方脚本工具集（arch_scan/dep_graph/risk_diagnose/quality_metrics/regression_guard 5 个可执行脚本 + mcp_server.py MCP 插件，纯 Python 标准库零依赖输出结构化 JSON）。从架构健康到内容真实性到工程责任感的完整质量闭环。所有软件/游戏项目必须在同一文件夹内分 src/ 和 bin/。工程之上才是其他。在架构审查、技术债评估、代码重构、质量提升、AI味检测、工程结构评审、游戏开发时调用。"
 version: "3.0"
-runAs: inline
+runAs: subagent
 allowed-tools: read_file, write_file, edit_file, grep, glob, bash
 ---
 

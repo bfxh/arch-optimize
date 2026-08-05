@@ -99,7 +99,7 @@ ponytail（懒散资深开发者模式）是"对工程负责"在编码层面的�
 
 ### 4.2 与 MCP 的协同
 - codebase-memory-mcp：代码知识图谱，加速对工程的理解
-- aether-trae-bridge：IDE 自动补全 + 代码 RAG，提高工程质量
+- srclight：本地代码语义搜索 + 调用图 + git 热点（完全本地零云依赖），提高工程质量
 
 ### 4.3 与 anti-ai-flavor 的协同
 - 反 AI 味是"对工程负责"在内容真实性上的体现
