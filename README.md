@@ -209,3 +209,11 @@ arch-optimize/
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+## 捐赠支持 (Donate)
+
+如果这个项目对你有帮助，可以请我喝杯咖啡 ☕ 感谢支持！
+
+If this project helps you, feel free to buy me a coffee ☕ Thanks for your support!
+
+<img src="assets/donate-qr-wechat.jpg" alt="微信赞赏码 (WeChat Donate QR)" width="240" />
