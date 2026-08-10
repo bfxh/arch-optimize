@@ -200,7 +200,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## 捐赠支持 (Donate)
 
-如果这个项目对你有帮助，可以请我喝杯咖啡 ☕ 感谢支持！
+如果这个项目对你有帮助，可以请我喝杯咖啡 ☕ 感谢支持！<img width="1263" height="1719" alt="302faffd53d00640514e0264113c1158" src="https://github.com/user-attachments/assets/234bb1b1-5abb-46d1-8f58-706b5ca81b96" />
+然后就是可以看看我的https://github.com/bfxh/unified-rx-mcp 主要是skill还是有好多的局限的
 
 If this project helps you, feel free to buy me a coffee ☕ Thanks for your support!
 
