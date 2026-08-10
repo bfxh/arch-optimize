@@ -205,4 +205,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 If this project helps you, feel free to buy me a coffee ☕ Thanks for your support!
 
-<img src="assets/donate-qr-wechat.jpg" alt="微信赞赏码 (WeChat Donate QR)" width="240" />
+
