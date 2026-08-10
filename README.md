@@ -1,22 +1,14 @@
 # arch-optimize
 
-Architecture optimization skill that fuses SWE-CI evolutionary quality assessment, six decay risk scanning, and architect-programmer dual-agent collaboration into a single toolkit. Provides coding conventions, quality metrics, and regression guarding for AI-driven code review and refactoring workflows.
+Architecture optimization skill: six decay risk scanning (R1-R6), architect-programmer dual-agent collaboration, anti-AI-flavor detection, and a local script toolkit. Provides coding conventions, quality metrics, and regression guarding for AI-driven code review and refactoring workflows.
 
 ## Overview
 
-`arch-optimize` integrates three theoretical frameworks to deliver a complete workflow from **architecture analysis** through **incremental optimization** to **regression guarding**:
+`arch-optimize` delivers a complete workflow from **architecture analysis** through **incremental optimization** to **regression guarding**:
 
-1. **SWE-CI Evolutionary Quality Assessment** (Sun Yat-sen University + Alibaba): Uses EvoScore to measure long-term code maintainability with asymmetric scoring that penalizes regressions
-2. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): Structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings
-3. **Architect-Programmer Dual-Agent Collaboration**: Separates strategy (architect) from execution (programmer) to avoid the "god's eye view" problem
-
-## Three-Level Evolution Path
-
-| Level | Form | Invocation | Version |
-|-------|------|-----------|---------|
-| Level 1 | Pure documentation | AI reads docs, then manually analyzes | v1.0 |
-| Level 2 | Script-enhanced | CLI commands with JSON output | v2.0 |
-| Level 3 | MCP plugin | Direct MCP protocol calls with structured tools | v3.0 |
+1. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): Structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings
+2. **Architect-Programmer Dual-Agent Collaboration**: Separates strategy (architect) from execution (programmer) to avoid the "god's eye view" problem
+3. **Anti-AI-Flavor Detection**: 18 AI-specific low-quality patterns (dead code, placeholders, model pride, etc.)
 
 ## Script Tools
 
@@ -28,7 +20,7 @@ The project includes 5 executable scripts that turn theoretical formulas and det
 | `scripts/dep_graph.py` | Stage 1 | Dependency graph generation (Mermaid/DOT), circular dependency detection | JSON / Mermaid / DOT |
 | `scripts/risk_diagnose.py` | Stage 2 | R1-R6 six decay risk scanning with four-part findings | JSON / Human-readable |
 | `scripts/quality_metrics.py` | Stage 3 | MI/CC/HV/Health Score calculation, hotspot identification | JSON / Human-readable |
-| `scripts/regression_guard.py` | Stage 5 | Test baseline recording, regression comparison, EvoScore calculation | JSON / Human-readable |
+| `scripts/regression_guard.py` | Stage 5 | Test baseline recording, regression comparison | JSON / Human-readable |
 
 ## MCP Tools
 
@@ -64,12 +56,10 @@ The Level 3 MCP plugin exposes 5 structured tools via the MCP protocol (FastMCP 
 - `min_cc` (int, default 0): Only report functions with CC >= this value
 
 **arch_optimize_regression_guard**
-- `action` (str, required): Subcommand "record"/"compare"/"evoscore"
+- `action` (str, required): Subcommand "record"/"compare"
 - `target` (str, record optional): Working directory
 - `baseline` (str, compare required): Baseline JSON file
 - `current` (str, compare required): Current JSON file
-- `history` (str, evoscore required): History JSON file
-- `gamma` (float, default 1.5): Discount factor
 - `test_cmd` (str, record optional): Test command
 - `output` (str, record required): Output JSON file path
 
@@ -120,7 +110,6 @@ python3 scripts/quality_metrics.py --target ./src --min-cc 10
 python3 scripts/regression_guard.py record --output baseline.json
 python3 scripts/regression_guard.py record --output current.json
 python3 scripts/regression_guard.py compare --baseline baseline.json --current current.json --json
-python3 scripts/regression_guard.py evoscore --history history.json --gamma 1.5
 ```
 
 ### MCP Server (Level 3)
@@ -169,15 +158,14 @@ Configure in your MCP client (e.g., Claude Desktop, TRAE, etc.):
 
 ## Design Principles
 
-1. **Evolution over snapshot**: Code quality is not a single state but a trajectory over time (SWE-CI core insight)
-2. **Diagnosis before fix**: Never propose fixes before completing risk diagnosis (brooks-lint iron law)
-3. **Incremental over large-scale**: At most 5 improvement requirements per iteration, small steps (SWE-CI architect mode)
-4. **Zero regression tolerance**: Breaking existing functionality costs more than adding new features (EvoScore asymmetric design)
-5. **Division of labor over omniscience**: Architect handles strategy, programmer handles execution, avoiding god's eye view (SWE-CI dual-agent)
-6. **Quantitative over intuitive**: MI, health score, EvoScore provide objective baselines
-7. **False positive protection**: Avoid misclassifying normal design pattern usage as violations
-8. **Executable over pure documentation**: All theoretical formulas and detection rules have corresponding script implementations that AI agents can directly call for quantitative data (v2.0 upgrade)
-9. **Protocol over command line**: MCP plugin encapsulation enables tools to be discovered and called by any AI agent via standard protocol without parsing CLI usage (v3.0 upgrade)
+1. **Diagnosis before fix**: Never propose fixes before completing risk diagnosis (brooks-lint iron law)
+2. **Incremental over large-scale**: At most 5 improvement requirements per iteration, small steps
+3. **Zero regression tolerance**: Breaking existing functionality costs more than adding new features
+4. **Division of labor over omniscience**: Architect handles strategy, programmer handles execution, avoiding god's eye view
+5. **Quantitative over intuitive**: MI, health score provide objective baselines
+6. **False positive protection**: Avoid misclassifying normal design pattern usage as violations
+7. **Executable over pure documentation**: All theoretical formulas and detection rules have corresponding script implementations that AI agents can directly call for quantitative data
+8. **Protocol over command line**: MCP plugin encapsulation enables tools to be discovered and called by any AI agent via standard protocol without parsing CLI usage
 
 ## Project Structure
 
@@ -199,7 +187,7 @@ arch-optimize/
 ├── references/
 │   ├── architecture-principles.md    # Clean Architecture, SOLID, DDD, R1-R6
 │   ├── coding-conventions.md         # C/C++/Rust/Go/TypeScript conventions
-│   ├── quality-metrics.md            # MI, EvoScore, health score, SQALE
+│   ├── quality-metrics.md            # MI, health score, SQALE
 │   ├── regression-guard.md           # Zero regression rate, asymmetric scoring
 │   └── collaboration-workflow.md     # Architect-programmer collaboration
 └── evaluations/

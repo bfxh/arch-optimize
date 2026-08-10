@@ -1,6 +1,6 @@
 ---
 name: "arch-optimize"
-description: "架构优化技能 v3.1：SWE-CI 演进质量评估、六大衰退风险扫描（R1-R6）、架构师-程序员双智能体协作、反AI味检测、src+bin 规范、本地脚本工具集（arch_scan/dep_graph/risk_diagnose/quality_metrics/regression_guard/vuln-scan/wf 全本地零依赖输出 JSON）。在架构审查、技术债评估、代码重构、质量提升、AI味检测、工程结构评审时调用。"
+description: "架构优化技能 v3.1：六大衰退风险扫描（R1-R6）、架构师-程序员双智能体协作、反AI味检测、src+bin 规范、本地脚本工具集（arch_scan/dep_graph/risk_diagnose/quality_metrics/regression_guard/vuln-scan/wf 全本地零依赖输出 JSON）。在架构审查、技术债评估、代码重构、质量提升、AI味检测、工程结构评审时调用。"
 version: "3.1"
 runAs: subagent
 allowed-tools: read_file, write_file, edit_file, grep, glob, bash
@@ -12,12 +12,11 @@ allowed-tools: read_file, write_file, edit_file, grep, glob, bash
 
 **根哲学：对工程负责。** 这是本技能以及所有关联 skill 的根本原则。不管什么项目类型（软件、游戏、舆论分析、漏洞挖掘），第一原则是对工程负责——交付的每一行代码、每一份文档、每一个决策，都必须经得起工程检验。
 
-本技能是**架构健康 + 内容真实性 + 工程责任**的三重质量门禁，融合四大理论体系：
+本技能是**架构健康 + 内容真实性 + 工程责任**的三重质量门禁：
 
-1. **SWE-CI 演进质量评估**（中山大学+阿里）：以 EvoScore 衡量代码长期维护能力，非对称评分惩罚回归
-2. **六大衰退风险扫描**（brooks-lint，基于 12 本经典工程书籍）：R1-R6 结构化诊断
-3. **架构师-程序员双智能体协作**：战略层与执行层分离，避免上帝视角
-4. **反AI味检测**：18 个 AI 特有低质量模式扫描，确保交付物经得起人类逐行审视
+1. **六大衰退风险扫描**（brooks-lint，基于 12 本经典工程书籍）：R1-R6 结构化诊断
+2. **架构师-程序员双智能体协作**：战略层与执行层分离，避免上帝视角
+3. **反AI味检测**：18 个 AI 特有低质量模式扫描，确保交付物经得起人类逐行审视
 
 **v3.1 变化**：剥离全部 MCP 职责描述（MCP 工具是独立配置层，不由技能承担）；技能只保留方法论 + 全本地脚本。
 
@@ -73,16 +72,15 @@ python scripts/detect_text_ai.py --target <项目> --json
 
 18 个 AI 特有低质量模式：死代码、占位符、套话、过度工程化、模型骄傲、指鹿为马等。代码与文档双通道。
 
-### 阶段五：演进质量评估（regression_guard）
+### 阶段五：回归防护（regression_guard）
 
 ```bash
 python scripts/regression_guard.py record --output <基线.json>
 python scripts/regression_guard.py compare --baseline <基线.json> --current <当前.json> --json
-python scripts/regression_guard.py evoscore --history <历史.json> --json
 ```
 
 - 非对称评分惩罚回归：质量下降比提升惩罚更重
-- EvoScore 衡量长期演进健康度
+- 零退化率 = 100% 方可合并（硬性门禁）
 
 ## src/bin 规范（强制）
 
@@ -99,7 +97,7 @@ python scripts/regression_guard.py evoscore --history <历史.json> --json
 | `dep_graph.py` | 依赖图（fan_in/fan_out/layer） | 同上 |
 | `risk_diagnose.py` | R1-R6 风险诊断 | 同上 |
 | `quality_metrics.py` | MI/CC/LOC/健康分 | 同上 |
-| `regression_guard.py` | 回归检测 + EvoScore | 同上 |
+| `regression_guard.py` | 回归检测（基线对比/零退化率） | 同上 |
 | `vuln-scan.ps1` | 安全漏洞扫描（7 维度） | PowerShell |
 | `detect_code_ai.py` | 代码 AI 味检测 | Python 标准库 |
 | `detect_text_ai.py` | 文档 AI 味检测 | 同上 |
