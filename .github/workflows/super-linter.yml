@@ -1,0 +1,33 @@
+---
+# GitHub Super-Linter 多语言检查 - 统一的多语言代码风格和质量检查
+name: "Super Linter"
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  super-linter:
+    name: Super Linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Super-Linter
+        uses: super-linter/super-linter@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: false
+          DEFAULT_BRANCH: main
+          FILTER_REGEX_EXCLUDE: '.*\.(png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$'
+          DISABLE_ERRORS: true

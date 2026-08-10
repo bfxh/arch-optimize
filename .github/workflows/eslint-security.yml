@@ -1,0 +1,68 @@
+---
+# ESLint 安全插件 - 使用 ESLint 安全插件检查 JavaScript/TypeScript 代码安全
+name: "ESLint Security Check"
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '**.js'
+      - '**.jsx'
+      - '**.ts'
+      - '**.tsx'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '**.js'
+      - '**.jsx'
+      - '**.ts'
+      - '**.tsx'
+
+permissions:
+  contents: read
+
+jobs:
+  eslint-security:
+    name: ESLint Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          elif [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+          else
+            npm install eslint eslint-plugin-security eslint-plugin-no-unsanitized
+          fi
+
+      - name: Run ESLint with security plugins
+        run: |
+          npx eslint . \
+            --ext .js,.jsx,.ts,.tsx \
+            --plugin security \
+            --plugin no-unsanitized \
+            --rule '{"no-eval": "error", "no-implied-eval": "error"}' \
+            --format json \
+            --output-file eslint-security-report.json
+        continue-on-error: true
+
+      - name: Upload ESLint report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eslint-security-report
+          path: eslint-security-report.json

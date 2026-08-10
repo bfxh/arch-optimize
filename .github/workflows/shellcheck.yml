@@ -1,0 +1,41 @@
+---
+# Shell 脚本检查 - 使用 ShellCheck 检查 Shell 脚本的质量和安全
+name: "ShellCheck"
+
+on:
+  push:
+    paths:
+      - '**.sh'
+      - '**.bash'
+  pull_request:
+    paths:
+      - '**.sh'
+      - '**.bash'
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: warning
+          format: gcc
+          additional_files: ''
+          ignore_paths: node_modules
+          check_all_files_with_shebangs: 'true'
+        continue-on-error: true
+
+      - name: Run shfmt check
+        run: |
+          curl -sS https://webi.sh/shfmt | sh
+          shfmt -d -i 2 -ci .
+        continue-on-error: true

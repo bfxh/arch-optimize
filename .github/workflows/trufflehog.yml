@@ -1,0 +1,38 @@
+---
+# TruffleHog 密钥扫描 - 深度扫描代码历史中的密钥泄露
+name: "TruffleHog Secret Scan"
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  trufflehog:
+    name: TruffleHog Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: .
+          extra_args: --only-verified --json
+
+      - name: TruffleHog GitHub Scan
+        uses: trufflesecurity/trufflehog@main
+        if: github.event_name == 'pull_request'
+        with:
+          path: .
+          extra_args: --since-commit HEAD~1 --only-verified

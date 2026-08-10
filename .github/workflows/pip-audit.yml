@@ -1,0 +1,71 @@
+---
+# Pip Audit 依赖漏洞检查 - 扫描 Python pip 依赖中的已知漏洞
+name: "Pip Audit"
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '**/requirements*.txt'
+      - '**/Pipfile'
+      - '**/Pipfile.lock'
+      - '**/pyproject.toml'
+      - '**/setup.py'
+      - '**/setup.cfg'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '**/requirements*.txt'
+      - '**/Pipfile'
+      - '**/Pipfile.lock'
+      - '**/pyproject.toml'
+      - '**/setup.py'
+      - '**/setup.cfg'
+  schedule:
+    - cron: '0 5 * * 2'
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: Pip Audit Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit on requirements
+        run: |
+          if [ -f "requirements.txt" ]; then
+            pip-audit -r requirements.txt -f json -o pip-audit-report.json || true
+          elif [ -f "Pipfile" ]; then
+            pip install pipenv
+            pipenv lock -r > requirements.txt
+            pip-audit -r requirements.txt -f json -o pip-audit-report.json || true
+          elif [ -f "pyproject.toml" ]; then
+            pip-audit -f json -o pip-audit-report.json || true
+          else
+            echo "No dependency file found"
+            pip-audit -f json -o pip-audit-report.json || true
+          fi
+        continue-on-error: true
+
+      - name: Display audit results
+        run: cat pip-audit-report.json || echo "No report generated"
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json

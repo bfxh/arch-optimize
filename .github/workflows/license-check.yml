@@ -1,0 +1,38 @@
+---
+# 许可证合规检查 - 检查项目依赖的许可证合规性
+name: "License Compliance Check"
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: REUSE Compliance Check
+        uses: fsfe/reuse-action@v4
+
+      - name: License lookup with license-checker
+        run: |
+          npm install -g license-checker
+          license-checker --production --json > license-report.json
+          cat license-report.json
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json

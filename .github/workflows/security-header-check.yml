@@ -1,0 +1,49 @@
+---
+# 安全头检查 - 检查 HTTP 安全响应头配置
+name: "Security Header Check"
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 10 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  security-headers:
+    name: Security Header Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check security headers
+        run: |
+          if [ -z "${{ vars.TARGET_URL }}" ]; then
+            echo "TARGET_URL is not set. Skipping header check."
+            exit 0
+          fi
+          curl -sI "${{ vars.TARGET_URL }}" > headers.txt
+          cat headers.txt
+
+          echo "--- Security Header Analysis ---"
+          for header in "Strict-Transport-Security" "X-Frame-Options" "X-Content-Type-Options" "Content-Security-Policy" "X-XSS-Protection" "Referrer-Policy" "Permissions-Policy"; do
+            if grep -qi "$header" headers.txt; then
+              echo "[PASS] $header is present"
+            else
+              echo "[FAIL] $header is missing"
+            fi
+          done
+
+      - name: Upload header report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-header-report
+          path: headers.txt

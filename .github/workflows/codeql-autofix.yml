@@ -1,0 +1,41 @@
+---
+# CodeQL 自动修复 - 利用 CodeQL 自动修复检测到的安全漏洞
+name: "CodeQL Autofix"
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  codeql-autofix:
+    name: CodeQL Autofix
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python, javascript, typescript, go
+          queries: +security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/autofix"
+
+      - name: Enable CodeQL Autofix
+        uses: github/codeql-action/autofix@v3
+        if: always()
+        continue-on-error: true

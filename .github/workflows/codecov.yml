@@ -1,0 +1,72 @@
+---
+# 代码覆盖率上报 - 收集并上报代码覆盖率到 Codecov
+name: "Codecov Coverage Report"
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  codecov:
+    name: Codecov Upload
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect project type and run coverage
+        run: |
+          # Python 项目
+          if [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
+            echo "Detected Python project"
+            pip install pytest pytest-cov
+            pytest --cov=. --cov-report=xml --cov-report=lcov
+
+          # Go 项目
+          elif [ -f "go.mod" ]; then
+            echo "Detected Go project"
+            go test ./... -coverprofile=coverage.out -covermode=atomic
+            go tool cover -func=coverage.out
+
+          # Rust 项目
+          elif [ -f "Cargo.toml" ]; then
+            echo "Detected Rust project"
+            cargo install cargo-tarpaulin
+            cargo tarpaulin --out xml --output-dir .
+
+          # Node.js 项目
+          elif [ -f "package.json" ]; then
+            echo "Detected Node.js project"
+            npm ci
+            npm test -- --coverage --coverageReporters=lcov || true
+
+          else
+            echo "Unknown project type, skipping coverage"
+            exit 0
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml,./lcov.info,./coverage.out,./cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            lcov.info
+            coverage.out
+            cobertura.xml

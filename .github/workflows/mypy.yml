@@ -1,0 +1,63 @@
+---
+# MyPy 类型检查 - Python 静态类型检查
+name: "MyPy Type Check"
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+      - '**/pyproject.toml'
+      - '**/setup.cfg'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+      - '**/pyproject.toml'
+      - '**/setup.cfg'
+
+permissions:
+  contents: read
+
+jobs:
+  mypy:
+    name: MyPy Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MyPy
+        run: pip install mypy
+
+      - name: Install type stubs
+        run: |
+          pip install types-requests types-PyYAML types-setuptools || true
+          # 安装项目依赖
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt || true
+          fi
+          if [ -f "pyproject.toml" ]; then
+            pip install -e . || true
+          fi
+
+      - name: Run MyPy
+        run: mypy . --ignore-missing-imports --show-error-codes --show-error-context
+        continue-on-error: true
+
+      - name: Run MyPy with strict mode
+        run: mypy . --strict --ignore-missing-imports --output json > mypy-report.json || true
+        continue-on-error: true
+
+      - name: Upload MyPy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mypy-report
+          path: mypy-report.json

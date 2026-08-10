@@ -1,0 +1,31 @@
+---
+# 发布草稿自动化 - 根据 commit 自动生成发布说明草稿
+name: "Release Drafter"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-release-draft:
+    name: Update Release Draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Draft release notes
+        uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+          disable-releaser: false
+          disable-autolabeler: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

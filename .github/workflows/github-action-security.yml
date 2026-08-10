@@ -1,0 +1,42 @@
+---
+# GitHub Action 安全最佳实践检查 - 检查工作流文件的安全性
+name: "GitHub Action Security Check"
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  action-security:
+    name: Action Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run zizmor for GitHub Actions security
+        uses: zfz/zizmor-action@v1
+        with:
+          range: '.github/workflows/'
+
+      - name: Run actionlint
+        run: |
+          curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
+          ./actionlint -color
+        continue-on-error: true
+
+      - name: Check for pinned actions
+        run: |
+          echo "Checking if all actions are pinned to commit SHAs..."
+          grep -rn "uses:" .github/workflows/ | grep -v "@" | while read line; do
+            echo "WARNING: Unpinned action found: $line"
+          done || true
+        continue-on-error: true

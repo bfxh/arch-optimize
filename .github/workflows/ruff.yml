@@ -1,0 +1,54 @@
+---
+# Ruff Python 检查 - 使用 Ruff 进行极速 Python 代码检查
+name: "Ruff Python Lint"
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+      - '**/pyproject.toml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+      - '**/pyproject.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: Ruff Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff check
+        run: ruff check . --output-format=github
+        continue-on-error: true
+
+      - name: Run Ruff format check
+        run: ruff format . --check
+        continue-on-error: true
+
+      - name: Run Ruff with all rules
+        run: ruff check . --select ALL --output-format=json > ruff-report.json || true
+        continue-on-error: true
+
+      - name: Upload Ruff report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ruff-report
+          path: ruff-report.json

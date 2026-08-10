@@ -1,0 +1,107 @@
+---
+# 安全洞察配置 - 项目安全元数据和策略配置
+# 参考: https://github.com/ossf/si-security-insights-spec
+
+version: 1.0.0
+
+# 项目元数据
+project:
+  name: ""
+  homepage: ""
+  administrators:
+    - name: ""
+      contact: ""
+
+# 仓库信息
+repository:
+  url: ""
+  type: "git"
+
+# 安全联系方式
+contacts:
+  - type: "email"
+    value: ""
+    primary: true
+  - type: "url"
+    value: ""
+    description: "Security advisory page"
+
+# 安全策略
+security-policy:
+  url: "/SECURITY.md"
+  disclosure: "coordinated"
+  languages:
+    - "en"
+    - "zh"
+
+# 漏洞赏金计划
+vulnerability-bounty:
+  available: false
+
+# 安全工具和检查
+security-testing:
+  - type: "sast"
+    name: "CodeQL"
+    implementation: "CI/CD"
+    rate: "per-commit"
+    coverage: ["python", "go", "rust", "javascript"]
+  - type: "sast"
+    name: "Semgrep"
+    implementation: "CI/CD"
+    rate: "per-commit"
+  - type: "sca"
+    name: "Trivy"
+    implementation: "CI/CD"
+    rate: "per-commit"
+  - type: "sca"
+    name: "OSV-Scanner"
+    implementation: "CI/CD"
+    rate: "per-commit"
+  - type: "secret-scanning"
+    name: "Gitleaks"
+    implementation: "CI/CD"
+    rate: "per-commit"
+  - type: "secret-scanning"
+    name: "TruffleHog"
+    implementation: "CI/CD"
+    rate: "per-commit"
+  - type: "fuzzing"
+    name: "cargo-fuzz / go-fuzz"
+    implementation: "CI/CD"
+    rate: "scheduled"
+
+# SBOM 生成
+sbom:
+  - type: "cyclonedx"
+    name: "CycloneDX SBOM"
+    implementation: "CI/CD"
+    rate: "per-release"
+  - type: "spdx"
+    name: "SPDX SBOM"
+    implementation: "CI/CD"
+    rate: "per-release"
+
+# CI/CD 信息
+cicd:
+  - system: "github-actions"
+    url: ""
+    workflows:
+      - name: "CodeQL"
+        file: ".github/workflows/codeql.yml"
+      - name: "Semgrep"
+        file: ".github/workflows/semgrep.yml"
+      - name: "Trivy"
+        file: ".github/workflows/trivy-fs.yml"
+      - name: "Gitleaks"
+        file: ".github/workflows/gitleaks.yml"
+
+# 依赖更新
+dependency-management:
+  - system: "dependabot"
+    url: ""
+    schedule: "weekly"
+
+# 安全评分
+security-scorecard:
+  available: true
+  url: ""

@@ -1,0 +1,47 @@
+---
+# 过期 Issue/PR 管理 - 自动标记和关闭过期的 Issue 和 PR
+name: "Stale Issue and PR Management"
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Mark Stale Issues and PRs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run stale action
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          # Issue 配置
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: 'stale'
+          exempt-issue-labels: 'pinned,security,enhancement'
+          stale-issue-message: |
+            此 Issue 已有 60 天未活动，现标记为过期。
+            如果仍然相关，请添加评论或移除 stale 标签。
+            否则将在 14 天后自动关闭。
+          close-issue-message: |
+            此 Issue 因长期未活动已自动关闭。
+            如仍有问题，请重新创建新的 Issue。
+          # PR 配置
+          days-before-pr-stale: 30
+          days-before-pr-close: 10
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'pinned,security,dependencies'
+          stale-pr-message: |
+            此 PR 已有 30 天未活动，现标记为过期。
+            如果仍在进行中，请更新或移除 stale 标签。
+            否则将在 10 天后自动关闭。
+          close-pr-message: |
+            此 PR 因长期未活动已自动关闭。
+            如仍需合并，请重新创建新的 PR。
+          operations-per-run: 30

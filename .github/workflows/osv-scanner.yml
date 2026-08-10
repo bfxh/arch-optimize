@@ -1,0 +1,58 @@
+---
+# OSV 漏洞数据库扫描 - 使用 Google OSV 数据库扫描已知漏洞
+name: "OSV Scanner"
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 12 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  osv-scanner:
+    name: OSV Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            --recursive
+            --format=json
+            --output=osv-results.json
+            ./
+
+      - name: Run OSV-Scanner on commits
+        uses: google/osv-scanner-action/osv-scanner-action@v1
+        if: github.event_name == 'push'
+        with:
+          scan-args: |-
+            --recursive
+            --format=sarif
+            --output=osv-results.sarif
+            ./
+
+      - name: Upload OSV results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: osv-results.sarif
+
+      - name: Upload OSV artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: osv-scanner-results
+          path: osv-results.*

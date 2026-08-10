@@ -1,0 +1,41 @@
+---
+# SPDX SBOM 生成 - 生成 SPDX 格式的软件物料清单
+name: "SPDX SBOM Generation"
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 7 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  spdx:
+    name: Generate SPDX SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate SPDX SBOM
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        with:
+          filePath: spdx-sbom.spdx
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spdx-sbom
+          path: spdx-sbom.spdx
+
+      - name: Syft SBOM generation
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: spdx-sbom.json
+          artifact-name: spdx-sbom-json

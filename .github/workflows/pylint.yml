@@ -1,0 +1,64 @@
+---
+# Pylint 检查 - Python 代码静态分析工具
+name: "Pylint Check"
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - '**.py'
+
+permissions:
+  contents: read
+
+jobs:
+  pylint:
+    name: Pylint Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pylint
+        run: pip install pylint pylint-json2html
+
+      - name: Install project dependencies
+        run: |
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt || true
+          fi
+          if [ -f "pyproject.toml" ]; then
+            pip install -e . || true
+          fi
+
+      - name: Run Pylint
+        run: |
+          pylint **/*.py --exit-zero --output-format=json:pylint-report.json,text:pylint-output.txt
+        continue-on-error: true
+
+      - name: Generate HTML report
+        run: pylint-json2html -f json -o pylint-report.html pylint-report.json || true
+        continue-on-error: true
+
+      - name: Display Pylint output
+        run: cat pylint-output.txt || echo "No output"
+
+      - name: Upload Pylint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pylint-reports
+          path: |
+            pylint-report.json
+            pylint-report.html
+            pylint-output.txt
