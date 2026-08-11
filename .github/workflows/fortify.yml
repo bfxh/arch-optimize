@@ -1,0 +1,33 @@
+name: Fortify Static Analysis
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  fortify:
+    name: Fortify Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run Fortify ScanCentral
+        uses: fortify/gha-setup-scancentral-client@v2
+        with:
+          client-auth-token: ${{ secrets.SCANCENTRAL_CLIENT_AUTH_TOKEN }}
+      - name: Package and Submit
+        run: |
+          scancentral package -bt mvn -o package.zip
+          scancentral scan -bt mvn -uc ${{ secrets.FORTIFY_SSC_URL }} \
+            -upt ${{ secrets.FORTIFY_SSC_TOKEN }} \
+            -p package.zip \
+            -application ${{ secrets.FORTIFY_APP_NAME }} \
+            -version ${{ github.sha }}

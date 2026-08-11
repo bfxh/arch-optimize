@@ -1,0 +1,29 @@
+name: TFLint
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  tflint:
+    name: TFLint Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: Init TFLint
+        run: tflint --init
+      - name: Run TFLint
+        run: tflint -f json || true

@@ -1,0 +1,28 @@
+name: GNATcheck Ada Code Analysis
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  gnatcheck:
+    name: GNATcheck Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install GNAT
+        run: sudo apt-get update && sudo apt-get install -y gnat
+      - name: Run GNATcheck
+        run: |
+          find . -name '*.adb' -o -name '*.ads' | head -100 | while read f; do
+            gnatcheck -P"$f" 2>/dev/null || true
+          done

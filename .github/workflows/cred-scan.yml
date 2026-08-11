@@ -1,0 +1,35 @@
+name: Cred Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  cred-scan:
+    name: Cred Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install cred-scanner
+        run: pip install cred-scanner
+      - name: Run Cred Scan
+        run: cred-scan -p . -o cred-scan-results.json || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cred-scan-results
+          path: cred-scan-results.json

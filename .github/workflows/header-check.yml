@@ -1,0 +1,34 @@
+name: Header Check
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  header-check:
+    name: File Header Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install license-checker header plugin
+        run: npm install license-check-and-add
+      - name: Run Header Check
+        run: |
+          if [ -f "license-check-and-add-config.json" ]; then
+            npx license-check-and-add check -f license-check-and-add-config.json || true
+          else
+            echo "::warning::No license-check-and-add-config.json found"
+          fi

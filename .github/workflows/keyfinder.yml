@@ -1,0 +1,32 @@
+name: Key Finder
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  keyfinder:
+    name: Key Finder Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install KeyFinder
+        run: |
+          go install github.com/starkenberg/keyfinder@latest
+      - name: Run KeyFinder
+        run: keyfinder -path . -output keyfinder-results.json || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: keyfinder-results
+          path: keyfinder-results.json

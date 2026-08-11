@@ -1,0 +1,32 @@
+name: CloudFormation Lint
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  cfn-lint:
+    name: cfn-lint Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+      - name: Run cfn-lint
+        run: |
+          find . -name "*.yaml" -o -name "*.yml" -o -name "*.json" | while read f; do
+            cfn-lint "$f" || true
+          done

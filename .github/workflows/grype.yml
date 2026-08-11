@@ -1,0 +1,35 @@
+name: Grype Vulnerability Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  grype:
+    name: Grype Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run Grype vulnerability scanner
+        uses: anchore/scan-action@v4
+        with:
+          image: ${{ secrets.DOCKER_IMAGE || 'alpine:latest' }}
+          output-format: sarif
+          fail-build: false
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif

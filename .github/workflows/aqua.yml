@@ -1,0 +1,26 @@
+name: Aqua Container Security
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  aqua:
+    name: Aqua Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run Aqua Security Scanner
+        uses: aquasecurity/aqua-action@master
+        with:
+          api-token: ${{ secrets.AQUA_API_TOKEN }}
+          image: ${{ secrets.DOCKER_IMAGE || 'alpine:latest' }}

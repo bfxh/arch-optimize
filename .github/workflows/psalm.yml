@@ -1,0 +1,30 @@
+name: Psalm PHP Security Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  psalm:
+    name: Psalm Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Install Psalm
+        run: composer require --dev vimeo/psalm || true
+      - name: Run Psalm
+        run: vendor/bin/psalm --no-progress --output-format=text

@@ -1,0 +1,36 @@
+name: Cppcheck C/C++ Static Analysis
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  cppcheck:
+    name: Cppcheck Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Run Cppcheck
+        run: |
+          cppcheck --enable=warning,style,performance,portability \
+            --suppress=missingInclude \
+            --xml --xml-version=2 \
+            --output-file=cppcheck.xml \
+            . || true
+      - name: Upload Cppcheck results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cppcheck-results
+          path: cppcheck.xml

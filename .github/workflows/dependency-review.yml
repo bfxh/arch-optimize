@@ -1,30 +1,26 @@
----
-# GitHub 依赖审查 - 在 PR 中检查依赖变更的安全性
-name: "Dependency Review"
+name: GitHub Dependency Review
 
 on:
+  push:
+    branches: [main, master, main-v2, develop]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
-          comment-summary-in-pr: always
-          # 允许的许可证列表
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unlicense
-          # 拒绝的许可证列表
-          # deny-licenses: GPL-3.0, AGPL-3.0
+          deny-licenses: GPL-3.0, AGPL-3.0

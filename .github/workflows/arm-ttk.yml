@@ -1,0 +1,30 @@
+name: ARM Template Test Toolkit
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  arm-ttk:
+    name: ARM TTK Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install PowerShell ARM-TTK
+        run: |
+          sudo apt-get update && sudo apt-get install -y powershell
+          pwsh -Command "Install-Module -Name arm-ttk -Force -Scope CurrentUser"
+      - name: Run ARM-TTK
+        run: |
+          find . -name "azuredeploy.json" -o -name "mainTemplate.json" | while read f; do
+            pwsh -Command "Test-AzTemplate -TemplatePath '$f'" || true
+          done

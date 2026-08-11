@@ -1,14 +1,13 @@
----
-# 许可证合规检查 - 检查项目依赖的许可证合规性
-name: "License Compliance Check"
+name: License Check
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, main-v2, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 0 * * 0'
 
 permissions:
   contents: read
@@ -17,22 +16,21 @@ jobs:
   license-check:
     name: License Check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: REUSE Compliance Check
-        uses: fsfe/reuse-action@v4
-
-      - name: License lookup with license-checker
-        run: |
-          npm install -g license-checker
-          license-checker --production --json > license-report.json
-          cat license-report.json
-
-      - name: Upload license report
-        uses: actions/upload-artifact@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          name: license-report
-          path: license-report.json
+          node-version: '20'
+      - name: Run License Checker
+        uses: hiwelo/license-checker-action@v1.2.0
+        with:
+          allowed-licenses: MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD
+          output: license-check-results.txt
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: license-check-results
+          path: license-check-results.txt

@@ -1,0 +1,34 @@
+name: Regula Policy Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  regula:
+    name: Regula Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Regula
+        run: |
+          curl -sL https://github.com/fugue/regula/releases/latest/download/regula_linux_amd64.tar.gz -o regula.tar.gz
+          tar -xzf regula.tar.gz
+          chmod +x regula
+      - name: Run Regula
+        run: ./regula run . --format json --output regula-results.json || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regula-results
+          path: regula-results.json

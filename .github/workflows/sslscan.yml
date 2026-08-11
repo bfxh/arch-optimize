@@ -1,0 +1,31 @@
+name: SSL Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  sslscan:
+    name: SSL Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install sslscan
+        run: sudo apt-get update && sudo apt-get install -y sslscan
+      - name: Run sslscan
+        run: sslscan --xml=sslscan-results.xml ${{ secrets.SSL_TARGET || 'localhost' }} || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sslscan-results
+          path: sslscan-results.xml

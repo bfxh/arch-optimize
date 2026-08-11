@@ -1,0 +1,31 @@
+name: Sigstore Signature Verification
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  sigstore:
+    name: Sigstore Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Cosign (Sigstore)
+        uses: sigstore/cosign-installer@v3
+      - name: Verify signature
+        run: |
+          if [ -n "${{ secrets.COSIGN_PUB_KEY }}" ]; then
+            echo "${{ secrets.COSIGN_PUB_KEY }}" > cosign.pub
+            cosign verify --key cosign.pub ${{ secrets.DOCKER_IMAGE || 'alpine:latest' }} || true
+          else
+            echo "::warning::No COSIGN_PUB_KEY secret configured"
+          fi

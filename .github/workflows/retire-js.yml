@@ -1,0 +1,35 @@
+name: Retire.js Check
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  retire-js:
+    name: Retire.js Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Retire.js
+        run: npm install -g retire
+      - name: Run Retire.js
+        run: retire --path . --outputformat json --outputpath retirejs-results.json || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: retirejs-results
+          path: retirejs-results.json

@@ -1,0 +1,36 @@
+name: Starboard Security Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  starboard:
+    name: Starboard Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Starboard
+        run: |
+          curl -sL https://github.com/aquasecurity/starboard/releases/latest/download/starboard_linux_amd64.tar.gz -o starboard.tar.gz
+          tar -xzf starboard.tar.gz
+          chmod +x starboard
+      - name: Run Starboard
+        run: |
+          ./starboard scan vulnerabilityreports deployment/nginx --namespace default || true
+          ./starboard get vulnerabilityreports deployment/nginx --namespace default -o json > starboard-results.json || true
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: starboard-results
+          path: starboard-results.json

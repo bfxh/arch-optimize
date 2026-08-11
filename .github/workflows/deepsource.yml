@@ -1,0 +1,28 @@
+name: DeepSource Analysis
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  deepsource:
+    name: DeepSource Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run DeepSource
+        uses: deepsourcelabs/test-coverage-action@master
+        with:
+          key: ${{ secrets.DEEPSOURCE_DSN }}
+          coverage-file: ./coverage.xml

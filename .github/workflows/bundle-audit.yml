@@ -1,0 +1,29 @@
+name: Ruby Bundle Audit
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  bundle-audit:
+    name: Bundle Audit Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+      - name: Install bundle-audit
+        run: gem install bundle-audit
+      - name: Run bundle-audit
+        run: bundle-audit check --update || true

@@ -1,0 +1,30 @@
+name: Clang-Tidy Static Analysis
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  clang-tidy:
+    name: Clang-Tidy Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-tidy cmake
+      - name: Run Clang-Tidy
+        run: |
+          find . -name '*.c' -o -name '*.cpp' -o -name '*.cc' -o -name '*.h' -o -name '*.hpp' | head -100 | while read f; do
+            clang-tidy "$f" -- -std=c++17 2>/dev/null || true
+          done

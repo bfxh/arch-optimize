@@ -1,24 +1,13 @@
----
-# Safety 依赖检查 - 使用 Safety 工具检查 Python 依赖安全漏洞
-name: "Safety Dependency Check"
+name: Python Safety Check
 
 on:
   push:
-    branches: [main, master, develop]
-    paths:
-      - '**/requirements*.txt'
-      - '**/Pipfile'
-      - '**/pyproject.toml'
-      - '**/setup.py'
+    branches: [main, master, main-v2, develop]
   pull_request:
-    branches: [main, master, develop]
-    paths:
-      - '**/requirements*.txt'
-      - '**/Pipfile'
-      - '**/pyproject.toml'
-      - '**/setup.py'
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 2'
+    - cron: '0 0 * * 0'
 
 permissions:
   contents: read
@@ -27,40 +16,20 @@ jobs:
   safety:
     name: Safety Scan
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
+          python-version: '3.x'
       - name: Install Safety
         run: pip install safety
-
-      - name: Run Safety check
-        run: |
-          if [ -f "requirements.txt" ]; then
-            safety check --file requirements.txt --output json > safety-report.json || true
-          elif [ -f "Pipfile" ]; then
-            pip install pipenv
-            pipenv lock -r > requirements.txt
-            safety check --file requirements.txt --output json > safety-report.json || true
-          elif [ -f "pyproject.toml" ]; then
-            safety check --output json > safety-report.json || true
-          else
-            safety check --output json > safety-report.json || true
-          fi
-        continue-on-error: true
-
-      - name: Display safety results
-        run: cat safety-report.json || echo "No report generated"
-
-      - name: Upload safety report
+      - name: Run Safety
+        run: safety check --json --output safety-results.json || true
+      - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: safety-report
-          path: safety-report.json
+          name: safety-results
+          path: safety-results.json

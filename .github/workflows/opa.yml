@@ -1,0 +1,33 @@
+name: Open Policy Agent
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  opa:
+    name: OPA Policy Evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa
+      - name: Run OPA
+        run: |
+          find . -name '*.rego' | while read f; do
+            ./opa check "$f" || true
+          done
+          find . -name '*.json' -path '*/input/*' | while read f; do
+            ./opa eval -i "$f" -d ./*.rego data || true
+          done

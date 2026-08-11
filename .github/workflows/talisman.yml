@@ -1,0 +1,29 @@
+name: Talisman Pre-commit Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  talisman:
+    name: Talisman Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Talisman
+        run: |
+          curl -sL https://github.com/thoughtworks/talisman/releases/latest/download/talisman_linux_amd64 -o talisman
+          chmod +x talisman
+      - name: Run Talisman
+        run: ./talisman --scan --debug || true

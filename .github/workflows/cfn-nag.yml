@@ -1,0 +1,32 @@
+name: cfn-nag CloudFormation Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  cfn-nag:
+    name: cfn-nag Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+      - name: Install cfn-nag
+        run: gem install cfn-nag
+      - name: Run cfn-nag
+        run: |
+          find . -name "*.yaml" -o -name "*.yml" -o -name "*.json" | while read f; do
+            cfn_nag_scan --input-path "$f" --output-format json || true
+          done

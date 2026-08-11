@@ -1,0 +1,27 @@
+name: Yor Tag Scan
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  yor:
+    name: Yor Tag Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run Yor
+        uses: bridgecrewio/yor-action@main
+        with:
+          directory: .
+          output_format: cli
+          tag_groups: git,code2cloud
