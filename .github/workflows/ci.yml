@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 扩展层依赖（cae/pr-oracle/tautest 的 server.py 顶层 import）
+          # mcp pin 1.26.0（FastMCP API 稳定基线；新版 list_tools 变更会炸 cae 扩展）
+          # pydantic：vendored pr_test_oracle（TestMapping/TestMapper）依赖
+          python -m pip install mcp==1.26.0 httpx pytest pydantic
+
+      - name: Assemble extension layout (_EXT_BASE = mcp-servers/)
+        run: |
+          mkdir -p mcp-servers
+          cp -r vendor/extensions/code-analysis-enhance mcp-servers/
+          cp -r vendor/extensions/pr-oracle mcp-servers/
+          cp -r vendor/extensions/tautest mcp-servers/
+          cp -r vendor/extensions/stats mcp-servers/
+
+      - name: Build lse-engine (Rust LSE 引擎，pytest 依赖其 release 二进制)
+        uses: dtolnay/rust-toolchain@stable
+      - name: cargo build release
+        run: cd lse-engine && cargo build --release
+
+      - name: Run pytest suite
+        run: python -m pytest test_unified_rx.py -q
+
+      - name: Run selftest
+        run: python server.py --selftest
+
+      - name: Run MCP stdio smoke test (协议层回归：async handler / tools/list)
+        run: python scripts/mcp_smoke.py
+
+      - name: Run tool_ratchet baseline check (工具清单漂移即红)
+        run: python scripts/tool_ratchet.py --check
+
+      - name: Run async_guard (同步路径禁 asyncio.run，协议层崩溃防回归)
+        run: python scripts/async_guard.py server.py

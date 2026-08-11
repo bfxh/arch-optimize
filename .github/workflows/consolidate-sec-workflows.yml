@@ -1,0 +1,62 @@
+name: Consolidate Security Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'DRY_RUN=true 只生成报告不删除（默认 false）'
+        required: false
+        type: boolean
+        default: false
+      skip_run:
+        description: 'SKIP_RUN=true 只部署不触发运行（默认 false）'
+        required: false
+        type: boolean
+        default: false
+      target_repo:
+        description: '只处理指定仓库（逗号分隔，留空=全部仓库）'
+        required: false
+        type: string
+        default: ''
+  schedule:
+    - cron: '0 2 * * 1'   # 每周一凌晨 2:00 自动巡检合并
+
+permissions:
+  contents: write
+
+concurrency:
+  group: consolidate-sec-workflows
+  cancel-in-progress: false
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run consolidate script
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_OWNER: bfxh
+          SEC_DIR: sec-workflows
+          TARGET_REPO: ${{ inputs.target_repo }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          SKIP_RUN: ${{ inputs.skip_run && 'true' || 'false' }}
+        run: |
+          # 将 sec-workflows 源目录与本脚本放到一起执行
+          # 脚本会读取同目录下的 sec-workflows/*.yml
+          python consolidate_sec_workflows.py
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sec-workflows-report
+          path: sec-workflows-report.md
+          if-no-files-found: warn
+          retention-days: 3

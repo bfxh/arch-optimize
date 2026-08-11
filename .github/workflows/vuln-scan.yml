@@ -1,0 +1,85 @@
+name: vuln-scan
+
+# 自动漏洞扫描（常态挖漏洞 · unified-rx MCP 端）
+# 每次 push/PR 自动跑：bandit(安全静态分析) + bug_scan 自扫(MCP 挖自己)
+# + pip-audit(依赖漏洞)。与本地 scripts/vuln-scan.mjs 双端闭环。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  bandit:
+    name: bandit (Python 安全扫描)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: bandit
+        run: |
+          python -m pip install bandit==1.8.3
+          bandit -q -r . -x vendor,tests,test_unified_rx.py -f json -o bandit.json --exit-zero
+      - name: Upload artifact (bandit JSON 报告)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit.json
+          retention-days: 30
+
+  selfscan:
+    name: bug_scan 自扫 (MCP 挖自己)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Self-scan with bug_scan
+        run: |
+          python - <<'EOF'
+          import json, server
+          r = server._call('bug_scan', {'path': '.', 'max_files': 200})[0]
+          d = json.loads(r.text)
+          issues = d.get('issues', [])
+          errs = [i for i in issues if i.get('severity') == 'error']
+          print(f"bug_scan 自扫: {len(issues)} findings ({len(errs)} error, {len(issues)-len(errs)} warning)")
+          for i in issues[:30]:
+              print(f"  {i.get('severity')} {i.get('rule')} {i.get('file')}:{i.get('line')} {i.get('msg','')[:120]}")
+          if errs:
+              raise SystemExit(1)
+          # std_check 自扫（含 secret_detection 依赖泄露，Critical fail——两端一致）
+          r2 = server._call('std_check', {'path': '.', 'max_files': 200})[0]
+          d2 = json.loads(r2.text)
+          s2 = d2.get('summary', {})
+          secrets = [i for i in d2.get('issues', []) if i.get('rule') == 'secret_detection']
+          print(f"std_check 自扫: {s2.get('total', 0)} findings (critical={s2.get('critical', 0)}, warning={s2.get('warning', 0)}, secret={len(secrets)})")
+          for i in secrets[:10]:
+              print(f"  SECRET {i.get('file')}:{i.get('line')} {i.get('msg','')[:120]}")
+          if s2.get('critical', 0) > 0:
+              raise SystemExit(1)
+          EOF
+
+  deps:
+    name: pip-audit (依赖漏洞)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit==2.9.0 mcp httpx
+          python -m pip_audit
+        continue-on-error: true
