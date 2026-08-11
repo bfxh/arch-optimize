@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: sec-matrix-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ── 静态分析矩阵（14 项 × 2 配置 = 28 检查）──
