@@ -20,8 +20,8 @@ jobs:
     name: bandit (Python 安全扫描)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: bandit
@@ -29,7 +29,7 @@ jobs:
           python -m pip install bandit==1.8.3
           bandit -q -r . -x vendor,tests,test_unified_rx.py -f json -o bandit.json --exit-zero
       - name: Upload artifact (bandit JSON 报告)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bandit-report
@@ -40,8 +40,8 @@ jobs:
     name: bug_scan 自扫 (MCP 挖自己)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Self-scan with bug_scan
@@ -73,8 +73,8 @@ jobs:
     name: pip-audit (依赖漏洞)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: pip-audit
