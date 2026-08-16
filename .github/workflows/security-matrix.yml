@@ -32,8 +32,8 @@ jobs:
         tool: [bandit, pylint, ruff, mypy, semgrep, pyre, vulture]
         conf: [strict, default]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Run ${{ matrix.tool }} (${{ matrix.conf }})
@@ -50,7 +50,7 @@ jobs:
           esac
       - name: Upload SARIF
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: static-${{ matrix.tool }}-${{ matrix.conf }}
           path: |
@@ -69,8 +69,8 @@ jobs:
         tool: [pip-audit, safety, osv-scanner, snyk, trivy]
         conf: [requirements, pyproject, full]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Run ${{ matrix.tool }} (${{ matrix.conf }})
@@ -86,7 +86,7 @@ jobs:
           esac
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deps-${{ matrix.tool }}-${{ matrix.conf }}
           path: '*.json'
@@ -102,7 +102,7 @@ jobs:
       matrix:
         tool: [gitleaks, trufflehog, git-secrets, detect-secrets, talisman, cred-scan]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Run ${{ matrix.tool }}
@@ -117,7 +117,7 @@ jobs:
           esac
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: secrets-${{ matrix.tool }}
           path: '*.json'
@@ -133,7 +133,7 @@ jobs:
       matrix:
         tool: [trivy-fs, grype, clair, snyk-container, docker-bench, dive]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run ${{ matrix.tool }}
         run: |
           case "${{ matrix.tool }}" in
@@ -146,7 +146,7 @@ jobs:
           esac
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vulns-${{ matrix.tool }}
           path: '*.json'
@@ -162,7 +162,7 @@ jobs:
       matrix:
         tool: [tfsec, checkov, kics, conftest, opa]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run ${{ matrix.tool }}
         run: |
           case "${{ matrix.tool }}" in
@@ -174,7 +174,7 @@ jobs:
           esac
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: iac-${{ matrix.tool }}
           path: '*.json'
