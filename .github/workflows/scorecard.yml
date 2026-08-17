@@ -1,0 +1,38 @@
+name: OpenSSF Scorecard
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run Scorecard Analysis
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: scorecard.sarif
