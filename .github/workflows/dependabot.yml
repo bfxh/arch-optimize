@@ -1,0 +1,33 @@
+name: Dependabot Check
+
+on:
+  push:
+    branches: [main, master, main-v2, develop]
+  pull_request:
+    branches: [main, master, main-v2, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  dependabot-check:
+    name: Dependabot Configuration Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify Dependabot configuration
+        run: |
+          if [ ! -f ".github/dependabot.yml" ] && [ ! -f ".github/dependabot.yaml" ]; then
+            echo "::warning::Dependabot configuration file not found. Please create .github/dependabot.yml"
+          else
+            echo "Dependabot configuration found."
+          fi
+      - name: Dependabot validation
+        uses: dependabot/fetch-metadata@v2
+        with:
+          alert-lookup: true
+          compat-lookup: true
