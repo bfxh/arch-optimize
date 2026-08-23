@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Run stale action
-        uses: actions/stale@v9
+        uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           # Issue 配置

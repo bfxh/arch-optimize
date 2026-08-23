@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Verify Dependabot configuration
         run: |
           if [ ! -f ".github/dependabot.yml" ] && [ ! -f ".github/dependabot.yaml" ]; then
@@ -27,7 +27,7 @@ jobs:
             echo "Dependabot configuration found."
           fi
       - name: Dependabot validation
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
         with:
           alert-lookup: true
           compat-lookup: true
