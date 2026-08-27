@@ -1,198 +1,140 @@
 # arch-optimize
 
-Architecture optimization skill: six decay risk scanning (R1-R6), architect-programmer dual-agent collaboration, anti-AI-flavor detection, and a local script toolkit. Provides coding conventions, quality metrics, and regression guarding for AI-driven code review and refactoring workflows.
+Architecture optimization skill: six decay risk scanning (R1-R6), architect-programmer dual-agent collaboration, and quantitative regression guarding. 5 stdlib-only Python scripts, zero external dependencies.
 
 ## Overview
 
-`arch-optimize` delivers a complete workflow from **architecture analysis** through **incremental optimization** to **regression guarding**:
+`arch-optimize` delivers a workflow from **architecture analysis** through **incremental optimization** to **regression guarding**:
 
-1. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): Structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings
-2. **Architect-Programmer Dual-Agent Collaboration**: Separates strategy (architect) from execution (programmer) to avoid the "god's eye view" problem
-3. **Anti-AI-Flavor Detection**: 18 AI-specific low-quality patterns (dead code, placeholders, model pride, etc.)
+1. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings
+2. **Architect-Programmer Dual-Agent Collaboration**: strategy (architect) separated from execution (programmer)
+3. **Quantitative Regression Guarding**: asymmetric scoring; quality drops are penalized more than gains are rewarded
 
 ## Script Tools
 
-The project includes 5 executable scripts that turn theoretical formulas and detection rules into runnable code. All scripts use Python 3.8+ standard library only (zero external dependencies) and output structured JSON.
+All scripts use Python 3.8+ standard library only (zero external dependencies) and output structured JSON.
 
-| Script | Stage | Function | Output Format |
-|--------|-------|----------|---------------|
-| `scripts/arch_scan.py` | Stage 1 | Directory scanning, entry point detection, tech stack identification, document localization | JSON / Human-readable |
-| `scripts/dep_graph.py` | Stage 1 | Dependency graph generation (Mermaid/DOT), circular dependency detection | JSON / Mermaid / DOT |
-| `scripts/risk_diagnose.py` | Stage 2 | R1-R6 six decay risk scanning with four-part findings | JSON / Human-readable |
-| `scripts/quality_metrics.py` | Stage 3 | MI/CC/HV/Health Score calculation, hotspot identification | JSON / Human-readable |
-| `scripts/regression_guard.py` | Stage 5 | Test baseline recording, regression comparison | JSON / Human-readable |
+| Script | Stage | Function |
+|--------|-------|----------|
+| `scripts/arch_scan.py` | 1 | Directory scanning, entry point detection, tech stack identification |
+| `scripts/dep_graph.py` | 1 | Dependency graph (Mermaid/DOT), circular dependency detection |
+| `scripts/risk_diagnose.py` | 2 | R1-R6 six decay risk scanning, four-part findings |
+| `scripts/quality_metrics.py` | 3 | MI/CC/HV/Health Score calculation, hotspot identification |
+| `scripts/regression_guard.py` | 5 | Test baseline recording, regression comparison |
 
-## MCP Tools
+## Six Decay Risks (R1-R6)
 
-The Level 3 MCP plugin exposes 5 structured tools via the MCP protocol (FastMCP framework, stdio transport). AI agents can discover and call these tools without parsing CLI usage.
+| Risk | Critical Threshold |
+|------|--------------------|
+| R1 Cognitive Overload | function >50 lines; nesting >5 levels |
+| R2 Change Propagation | change touches >5 files |
+| R3 Knowledge Duplication | same decision repeated across 3+ modules |
+| R4 Accidental Complexity | cyclomatic complexity >15 |
+| R5 Dependency Disorder | circular dependency exists |
+| R6 Domain Model Distortion | anemic domain model |
 
-| MCP Tool | Stage | CLI Script | Read-Only | Idempotent |
-|----------|-------|------------|-----------|------------|
-| `arch_optimize_scan` | Stage 1 | arch_scan.py | Yes | Yes |
-| `arch_optimize_dep_graph` | Stage 1 | dep_graph.py | Yes | Yes |
-| `arch_optimize_risk_diagnose` | Stage 2 | risk_diagnose.py | Yes | Yes |
-| `arch_optimize_quality_metrics` | Stage 3 | quality_metrics.py | Yes | Yes |
-| `arch_optimize_regression_guard` | Stage 5 | regression_guard.py | No | No |
-
-### MCP Tool Parameters
-
-**arch_optimize_scan**
-- `target` (str, required): Project root directory path
-- `depth` (int, default 5): Maximum directory scan depth (1-20)
-
-**arch_optimize_dep_graph**
-- `target` (str, required): Source code directory path
-- `format` (str, default "mermaid"): Graph format, "mermaid" or "dot"
-- `max_depth` (int, default 0): Maximum scan depth, 0 = unlimited
-
-**arch_optimize_risk_diagnose**
-- `target` (str, required): Project directory path
-- `risk` (str, optional): Filter single risk type "R1"-"R6"
-- `min_severity` (str, optional): Minimum severity "Critical"/"Warning"/"Suggestion"
-
-**arch_optimize_quality_metrics**
-- `target` (str, optional): Analysis directory (mutually exclusive with `file`)
-- `file` (str, optional): Analyze a single file (mutually exclusive with `target`)
-- `min_cc` (int, default 0): Only report functions with CC >= this value
-
-**arch_optimize_regression_guard**
-- `action` (str, required): Subcommand "record"/"compare"
-- `target` (str, record optional): Working directory
-- `baseline` (str, compare required): Baseline JSON file
-- `current` (str, compare required): Current JSON file
-- `test_cmd` (str, record optional): Test command
-- `output` (str, record required): Output JSON file path
+False-positive protection (composition-root wiring is not DIP violation, DTOs are not anemic models, etc.) lives in [`references/architecture-principles.md`](references/architecture-principles.md).
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.10 or higher
-- pip or any PEP 517 compatible build backend
-
-### From Source
+Requires Python 3.8+ only. No dependencies to install.
 
 ```bash
-git clone https://github.com/your-username/arch-optimize.git
+git clone https://github.com/bfxh/arch-optimize.git
 cd arch-optimize
-pip install -e .
+python scripts/risk_diagnose.py --target ./src --json
 ```
 
-### Dependencies
+Optional: `pip install -e .` installs a metadata-only package (`pyproject.toml` declares no runtime dependencies); use `pip install -e .[dev]` to also get pytest.
 
-```
-mcp>=1.28.1,<2
-pydantic>=2.0.0
+## Testing
+
+```bash
+python tests/test_smoke.py    # zero-dependency smoke tests (standalone)
+pytest                        # same suite via pytest, if installed
 ```
 
-The 5 analysis scripts (arch_scan, dep_graph, risk_diagnose, quality_metrics, regression_guard) use **Python standard library only** -- no external dependencies required. The MCP server (`mcp_server.py`) requires `mcp` and `pydantic`.
+The suite builds a sample two-package project, runs all five scripts against it, validates JSON schemas, checks determinism, and does a record→compare regression roundtrip.
+
+## Self-Scan Note
+
+Running these tools on this repository itself reports a low health score: `risk_diagnose.py` is a ~1,100-line single-file scanner with intentionally dense dispatch functions. The scanners target production codebases, not skill packages bundled with scripts-as-data. Treat self-scan results as demo output, not a quality claim about your project.
 
 ## Usage
 
-### CLI (Level 2)
-
 ```bash
-# Stage 1: Architecture perception
+# Stage 1: architecture perception
 python3 scripts/arch_scan.py --target ./src --json
 python3 scripts/dep_graph.py --target ./src --json
 
-# Stage 2: Risk diagnosis
+# Stage 2: risk diagnosis
 python3 scripts/risk_diagnose.py --target ./src --json
-python3 scripts/risk_diagnose.py --target ./src --risk R5 --json
-python3 scripts/risk_diagnose.py --target ./src --min-severity Critical --json
+python3 scripts/risk_diagnose.py --target ./src --risk R5 --min-severity Critical --json
 
-# Stage 3: Quality metrics
+# Stage 3: quality metrics
 python3 scripts/quality_metrics.py --target ./src --json
 python3 scripts/quality_metrics.py --file src/main.py --json
-python3 scripts/quality_metrics.py --target ./src --min-cc 10
 
-# Stage 5: Regression guard
+# Stage 5: regression guard
 python3 scripts/regression_guard.py record --output baseline.json
-python3 scripts/regression_guard.py record --output current.json
 python3 scripts/regression_guard.py compare --baseline baseline.json --current current.json --json
 ```
 
-### MCP Server (Level 3)
-
-Start the MCP server via stdio transport:
-
-```bash
-python3 scripts/mcp_server.py
-```
-
-Configure in your MCP client (e.g., Claude Desktop, TRAE, etc.):
-
-```json
-{
-  "mcpServers": {
-    "arch_optimize": {
-      "command": "python3",
-      "args": ["path/to/arch-optimize/scripts/mcp_server.py"]
-    }
-  }
-}
-```
+Typical agent pipeline: arch_scan → dep_graph → risk_diagnose → quality_metrics → regression_guard, passing each stage's JSON as context to the next.
 
 ## Supported Languages
 
-| Language | Extensions | Import Parsing | CC Calculation | Function Extraction |
-|----------|-----------|----------------|----------------|---------------------|
-| Python | .py | ast module | ast traversal | ast.FunctionDef |
-| Go | .go | import parsing | regex + brace matching | func keyword |
-| C/C++ | .c .h .cpp .hpp | #include parsing | regex + brace matching | function signature matching |
-| Rust | .rs | use/mod parsing | regex + brace matching | fn keyword |
-| TypeScript | .ts .tsx | import/from parsing | regex + brace matching | function / arrow functions |
-| JavaScript | .js .jsx | import/require parsing | regex + brace matching | function / arrow functions |
+Python (.py via ast), Go, C/C++, Rust, TypeScript/JavaScript — import parsing, CC calculation, and function extraction for each.
 
 ## Quality Gate Rules
 
 | Gate | Threshold | Type | Failure Behavior |
-|------|-----------|------|-----------------|
+|------|-----------|------|------------------|
 | Zero regression rate | = 100% | Hard | Block PR merge |
-| Health score | >= 70 | Soft | Warning + requires manual approval |
-| Release health score | >= 80 | Hard | Block release |
+| Health score | >= 70 | Soft | Warning + manual approval |
 | New code MI | >= 15 | Hard | Block PR merge |
 | Cyclomatic complexity | <= 15 | Hard | Block PR merge |
 | Circular dependencies | = 0 | Hard | Block PR merge |
-| Performance regression | < 10% | Soft | Warning + requires explanation |
 
 ## Design Principles
 
-1. **Diagnosis before fix**: Never propose fixes before completing risk diagnosis (brooks-lint iron law)
-2. **Incremental over large-scale**: At most 5 improvement requirements per iteration, small steps
-3. **Zero regression tolerance**: Breaking existing functionality costs more than adding new features
-4. **Division of labor over omniscience**: Architect handles strategy, programmer handles execution, avoiding god's eye view
-5. **Quantitative over intuitive**: MI, health score provide objective baselines
-6. **False positive protection**: Avoid misclassifying normal design pattern usage as violations
-7. **Executable over pure documentation**: All theoretical formulas and detection rules have corresponding script implementations that AI agents can directly call for quantitative data
-8. **Protocol over command line**: MCP plugin encapsulation enables tools to be discovered and called by any AI agent via standard protocol without parsing CLI usage
+1. **Diagnosis before fix**: never propose fixes before completing risk diagnosis
+2. **Incremental over large-scale**: at most 5 improvement requirements per iteration
+3. **Zero regression tolerance**: breaking existing functionality costs more than adding features
+4. **Division of labor over omniscience**: architect handles strategy, programmer handles execution
+5. **Quantitative over intuitive**: MI and health score provide objective baselines
+6. **False positive protection**: avoid misclassifying normal design pattern usage as violations
+7. **Executable over pure documentation**: every rule has a corresponding script implementation
 
 ## Project Structure
 
 ```
 arch-optimize/
 ├── SKILL.md                          # Skill definition and workflow documentation
-├── README.md                         # This file
+├── README.md
 ├── LICENSE                           # MIT License
-├── .gitignore                        # Python gitignore
-├── requirements.txt                  # Python dependencies
-├── pyproject.toml                    # Python project configuration
+├── pyproject.toml                    # Metadata only, no runtime deps
 ├── scripts/
-│   ├── arch_scan.py                  # Stage 1: Architecture perception
-│   ├── dep_graph.py                  # Stage 1: Dependency graph
-│   ├── risk_diagnose.py              # Stage 2: R1-R6 risk diagnosis
-│   ├── quality_metrics.py            # Stage 3: Quality metrics
-│   ├── regression_guard.py           # Stage 5: Regression guard
-│   └── mcp_server.py                 # MCP server (Level 3)
-├── references/
-│   ├── architecture-principles.md    # Clean Architecture, SOLID, DDD, R1-R6
-│   ├── coding-conventions.md         # C/C++/Rust/Go/TypeScript conventions
-│   ├── quality-metrics.md            # MI, health score, SQALE
-│   ├── regression-guard.md           # Zero regression rate, asymmetric scoring
-│   └── collaboration-workflow.md     # Architect-programmer collaboration
-└── evaluations/
-    └── evaluation.xml                # 12 QA pairs for MCP tool evaluation
+│   ├── arch_scan.py                  # Stage 1: architecture perception
+│   ├── dep_graph.py                  # Stage 1: dependency graph + cycle detection
+│   ├── risk_diagnose.py              # Stage 2: R1-R6 diagnosis
+│   ├── quality_metrics.py            # Stage 3: MI/CC/HV/health score
+│   └── regression_guard.py           # Stage 5: baseline record & compare
+└── references/                       # Load on demand per SKILL.md index
+    ├── architecture-principles.md    # Clean Architecture, SOLID thresholds, R1-R6 detail
+    ├── coding-conventions.md         # C/C++/Rust/Go/TypeScript conventions
+    ├── quality-metrics.md            # MI formula details, Pain×Spread debt ranking
+    ├── regression-guard.md           # Zero regression rate, asymmetric scoring
+    └── collaboration-workflow.md     # Architect-programmer dual-agent workflow
 ```
+
+## Companion Skills
+
+Split out of this repo into standalone skills:
+
+- **anti-ai-flavor**: AI-flavor detection for code and docs (`detect_code_ai.py`, `detect_text_ai.py`, 18-pattern catalog)
+- **vuln-hunting**: local security scanning and hardening (`vuln-scan.ps1`, `wf.ps1`)
+- **project-launcher**: meta-orchestration skill for starting any project
 
 ## License
 
@@ -200,9 +142,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ## 捐赠支持 (Donate)
 
-如果这个项目对你有帮助，可以请我喝杯咖啡 ☕ 感谢支持！<img width="1263" height="1719" alt="302faffd53d00640514e0264113c1158" src="https://github.com/user-attachments/assets/234bb1b1-5abb-46d1-8f58-706b5ca81b96" />
-然后就是可以看看我的https://github.com/bfxh/unified-rx-mcp 主要是skill还是有好多的局限的
+如果这个项目对你有帮助，可以请我喝杯咖啡 ☕ 感谢支持！
 
-If this project helps you, feel free to buy me a coffee ☕ Thanks for your support!
+![donate-qr-wechat](assets/donate-qr-wechat.jpg)
 
-
+你也可以看看我的 [unified-rx-mcp](https://github.com/bfxh/unified-rx-mcp)。
