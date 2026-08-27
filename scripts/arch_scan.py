@@ -21,6 +21,11 @@ import re
 import sys
 from pathlib import Path
 
+# Windows GBK 控制台下保证中文/Unicode 输出不乱码
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ── Constants ──────────────────────────────────────────────────────
 
 IGNORE_DIRS = {

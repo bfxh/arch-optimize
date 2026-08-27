@@ -22,6 +22,11 @@ import re
 import subprocess
 import sys
 
+# Windows GBK 控制台下保证中文/Unicode 输出不乱码
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ── Test command auto-detection ─────────────────────────────────────
 
 def detect_test_cmd(cwd: str = ".") -> str:
@@ -214,7 +219,12 @@ def cmd_record(args) -> int:
     if not test_cmd:
         test_cmd = detect_test_cmd(args.cwd)
         if not test_cmd:
-            print("Error: Could not auto-detect test command. Use --test-cmd to specify.", file=sys.stderr)
+            print(
+                "Error: Could not auto-detect test command. "
+                "Supported cues: go.mod, pytest.ini/setup.cfg, pyproject.toml [tool.pytest], package.json(jest). "
+                'Example: regression_guard.py record --output baseline.json --test-cmd "python -m pytest -v" ',
+                file=sys.stderr,
+            )
             return 1
         print(f"Auto-detected test command: {test_cmd}", file=sys.stderr)
 
