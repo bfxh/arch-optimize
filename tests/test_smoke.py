@@ -212,16 +212,17 @@ def _check_self_scan_claims():
         "--json",
     )
     names = [os.path.basename(f["file"]) for f in data["files"]]
-    below = [f["file"] for f in data["files"]
-             if f["maintainability_index"] < 15]
-    clearing = [os.path.basename(f["file"]) for f in data["files"]
-                if f["maintainability_index"] >= 15]
+    below = [f["file"] for f in data["files"] if f["maintainability_index"] < 15]
+    clearing = [
+        os.path.basename(f["file"])
+        for f in data["files"]
+        if f["maintainability_index"] >= 15
+    ]
     assert clearing == ["__init__.py"], (
         f"README 说 scripts/ 下只有 __init__.py 能过 MI≥15，实际过线的是 {clearing}"
     )
     assert len(below) == 5, (
-        f"README 说五个扫描器全部低于 15，实际 {len(below)} 个低于 15"
-        f"（扫描了 {names}）"
+        f"README 说五个扫描器全部低于 15，实际 {len(below)} 个低于 15（扫描了 {names}）"
     )
 
     diag = run_script(
