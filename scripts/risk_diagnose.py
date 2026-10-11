@@ -775,6 +775,7 @@ def detect_r3(files_data):
             fid += 1
 
     seen_pairs = set()
+    reported_cross = set()  # fid_a -> 已出过跨上下文发现，防止 C(N,2) 报告爆炸
     for fid_a, rel_a, fn_a, grams_a in func_records:
         candidates = defaultdict(int)
         for g in grams_a:
@@ -794,9 +795,36 @@ def detect_r3(files_data):
             union = len(grams_a | grams_b) or 1
             jac = inter / union
             if jac >= 0.6:
-                # False positive: different bounded contexts
                 ctx_a, ctx_b = _top_context(rel_a), _top_context(rel_b)
                 if ctx_a and ctx_b and ctx_a != ctx_b:
+                    # 跨限界上下文：一律降为 Warning 并明说，不再无条件跳过。
+                    # 原先这里 continue，等于把 R3 唯一要抓的"跨模块重复"整个豁免掉了
+                    # （实测：三份逐字节相同的计价函数跨目录放，0 发现、健康分 95；
+                    # 同一份放同目录，3 发现、健康分 0——同一事实只因目录不同差 95 分）。
+                    # 试过用"共享领域词"当豁免条件，实测不成立：rows/cfg/helper 这类
+                    # 通用脚手架与 tax/invoice 这类真领域词，纯词汇层面分不开，故不保留。
+                    # 每个源函数只报一次（按 fid 去重）：否则 N 份跨目录的复制会产生
+                    # C(N,2) 条成对发现（实测 20 份 = 190 条），会把报告和健康分打穿。
+                    if fid_a in reported_cross:
+                        continue
+                    reported_cross.add(fid_a)
+                    findings.append(
+                        _finding(
+                            "R3",
+                            "Warning",
+                            f"{rel_a}:{fn_a['name']}:{fn_a['line']}",
+                            symptom=(
+                                f"与 {rel_b}:{fn_b['name']} 代码块高度相似 "
+                                f"(Jaccard={jac:.2f})，且跨上下文"
+                                f"（{ctx_a} vs {ctx_b}）"
+                            ),
+                            source="同一决策/算法在不同限界上下文中被复制，未提取共享抽象",
+                            consequence="业务规则散落多处，改一处漏一处，各上下文还可能已各自漂移",
+                            remedy="先确认是不是同一决策：是则提取共享模块/防腐层统一表达；"
+                            "若确实是各自独立演化的相似结构（常见于各模块的 util），"
+                            "记录原因即可，不必强行合并",
+                        )
+                    )
                     continue
                 sev = "Critical" if jac >= 0.8 else "Warning"
                 findings.append(

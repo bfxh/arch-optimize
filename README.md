@@ -33,7 +33,7 @@ All scripts use Python 3.10+ standard library only (zero external dependencies, 
 | R5 Dependency Disorder | dependencies point one way | file-level cycles = Critical; domain importing an infra-looking name = Critical; inner depending on outer = Critical |
 | R6 Domain Model Distortion | code mirrors the domain | generic directory name = Warning; cross-context keyword = Warning; Python class whose public surface is only accessors = Warning, field-only class = Suggestion |
 
-Thresholds and every known blind spot (relative imports not graphed, `@dataclass` exempt from the anemic check, cross-directory duplicates skipped, non-Python CC under-counted by the `&&`/`||` regex, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
+Thresholds and every known blind spot (relative imports not graphed, `@dataclass` never flagged as anemic, cross-context duplication reported as Warning only — scaffolding vs domain vocabulary cannot be separated, non-Python CC under-counted by the `&&`/`||` regex, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
 
 False-positive protection (composition-root wiring is not DIP violation, DTOs are not anemic models, etc.) lives in [`references/architecture-principles.md`](references/architecture-principles.md).
 

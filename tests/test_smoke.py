@@ -347,6 +347,45 @@ def _check_r6_anemic_detector():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _check_r3_cross_context_duplication():
+    """R3 跨上下文重复：跨目录要报 Warning（改前 0 条被豁免掉），同目录保持 Critical。"""
+    root = tempfile.mkdtemp(prefix="arch-opt-r3-")
+    body = "\n".join(f"    step_{i} = base * {i} + {i}" for i in range(28))
+    code = (
+        "def compute_price(base, qty, rate, tax, discount, fee):\n"
+        + body
+        + "\n    return base\n"
+    )
+    try:
+        for d in ("billing", "shipping", "reporting"):
+            path = os.path.join(root, d, "pricing.py")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(code)
+        for i in range(3):
+            path = os.path.join(root, "same", f"pricing{i}.py")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(code)
+
+        data = run_script(
+            "risk_diagnose.py", "--target", root, "--risk", "R3", "--json"
+        )
+        blocks = [f for f in data["findings"] if "Jaccard" in f["symptom"]]
+        cross = [f for f in blocks if "跨上下文" in f["symptom"]]
+        same = [f for f in blocks if "跨上下文" not in f["symptom"]]
+
+        assert cross, "跨目录的逐字节重复必须报出（改前被上下文豁免跳过，实测 0 条）"
+        assert all(f["severity"] == "Warning" for f in cross), (
+            f"跨上下文应降为 Warning，实际 {sorted({f['severity'] for f in cross})}"
+        )
+        assert same and all(f["severity"] == "Critical" for f in same), (
+            f"同目录重复应保持 Critical，实际 {sorted({f['severity'] for f in same}) or '无'}"
+        )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_gate_blocks_vanish():
     """P0：通过过的测试消失/改名/清空，必须判红；放行通道必须可用。"""
     out_dir = tempfile.mkdtemp(prefix="arch-opt-vanish-")
@@ -583,6 +622,7 @@ def test_smoke(tmp_path=None):
         _check_regression_guard()
         _check_regression_is_detected()
         _check_gate_blocks_vanish()
+        _check_r3_cross_context_duplication()
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()
