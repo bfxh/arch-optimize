@@ -1,21 +1,25 @@
 ---
 name: "arch-optimize"
-description: "架构优化技能 v3.2：六大衰退风险扫描（R1-R6）、质量度量（MI/CC/健康分）、回归防护。五阶段工作流配 5 个零依赖脚本（arch_scan/dep_graph/risk_diagnose/quality_metrics/regression_guard），输出 JSON；脚本只给证据，引用数字前先读「已知限制」。架构审查、技术债评估、代码重构、质量提升、工程结构评审时调用。"
-version: "3.2"
+description: "架构优化技能 v3.3：先做设计判断（七类设计问题、五段式发现契约），再把六大风险扫描（R1-R6）与质量度量（MI/CC/健康分）当线索生成器，回归防护收口。5 个零依赖脚本只给证据；健康分通过≠设计没问题，引用数字前先读「已知限制」。架构审查、技术债评估、代码重构时调用。"
+version: "3.3"
 runAs: subagent
 allowed-tools: read_file, write_file, edit_file, grep, glob, bash
 ---
 
-# 架构优化技能 v3.2
+# 架构优化技能 v3.3
 
 ## 定位
 
 **根哲学：对工程负责。** 交付的每一行代码、每一份文档、每一个决策，都必须经得起工程检验（详见 `references/engineering-responsibility.md`）。
 
 三个核心能力：
-1. **六大衰退风险扫描**（brooks-lint，基于 12 本经典工程书籍）：R1-R6 结构化诊断
-2. **架构师-程序员双智能体协作**：战略层与执行层分离，避免上帝视角
+1. **设计判断**：七类设计问题的结构化提问 + 五段式发现契约（`references/design-review.md`）。这是先于一切脚本的一层。
+2. **六大衰退风险扫描**（brooks-lint，基于 12 本经典工程书籍）：R1-R6 结构化诊断——**线索生成器，不是结论**
 3. **量化回归防护**：非对称评分惩罚回归，零退化率才可合并
+
+（架构师-程序员双智能体协作是阶段四的执行方式，见 `references/collaboration-workflow.md`，不属于"发现问题"的能力。）
+
+> 分工必须清楚：设计问题（边界画在哪、抽象给谁用、不变量由谁守）不可机械化，由能力 1 负责；能力 2/3 负责把怀疑范围缩小到具体文件。反过来说一句可验证的话：**健康分通过 ≠ 设计没问题，最重的设计问题在 R1-R6 里往往零条发现**（成因见 `references/design-review.md` §〇）。
 
 ## 调用时机
 
@@ -23,7 +27,25 @@ allowed-tools: read_file, write_file, edit_file, grep, glob, bash
 - 新项目开工（强制 src/ + bin/ 分离）
 - 交付前质量门禁（配合 preflight）
 
-## 五阶段工作流
+## 工作流（阶段零 + 五阶段）
+
+### 阶段零：设计判断（先于脚本）
+
+先不跑任何脚本。读目录树、README/入口点、最近 20 次提交，按 `references/design-review.md` §一 的七类各问一遍：
+
+| 类别 | 一句话提问 |
+|------|-----------|
+| 1 变化边界 | 上一次真实需求变更动了几个互不相关的目录？ |
+| 2 耦合方向与强度 | B 改了 A 会被迫改吗？A 用的是 B 的哪一部分？ |
+| 3 抽象层次与位置 | 这个抽象有几个真实调用方？加一个实现要动几个文件？ |
+| 4 不变量归属 | 这条约束被绕过时，会在哪一行炸？ |
+| 5 演化能力与可逆性 | 半年后要换掉 X，要动几个文件？哪条测试会红？ |
+| 6 概念→代码映射 | 产品说的那个词，在代码里有几个名字？它们是同一个东西吗？ |
+| 7 一致性与单一事实源 | 这个值/规则/契约，改的时候要记得改几个地方？ |
+
+产出一张「待验证的设计问题清单」，每条按 §二 的五段式写（决策 → 代价/收益 → 依据 → 若 X 变更会怎样 → 为何脚本看不到）。清单可以为空，但空要写明每类各看过什么证据。
+
+**反模式（本技能最容易犯的那个）**：先跑脚本、再按脚本编号组织结论。那样清单的来源就是阈值表，七类提问不会发生，产出退化成"阈值告警整理"。
 
 ### 阶段一：架构感知（arch_scan + dep_graph）
 
@@ -36,11 +58,13 @@ python scripts/dep_graph.py --target <项目> --json
 
 **两个脚本的"模块"口径不同，不可互换**：`dep_graph` 把 `--target` 的**下一级目录**当作一个模块，`arch_scan` 把**每个含源文件的目录**当作一个模块。因此 `--target .` 扫一个 `src/ + bin/` 布局的规范项目时，dep_graph 只有 `src`、`bin` 两个节点、边与环为空——这不是"没有依赖"，是指错层级。要得到有意义的图，`--target` 应指向模块根（如 `./src`）。
 
-### 阶段二：风险诊断 R1-R6（risk_diagnose）
+### 阶段二：风险诊断 R1-R6（risk_diagnose，线索生成器）
 
 ```bash
 python scripts/risk_diagnose.py --target <项目> --json
 ```
+
+下表的用途是**缩小怀疑范围**，不是给出结论：每行的"脚本实际判据"是一个代理指标，与"概念定义"那一栏并不等价。判据命中只说明"值得去读这段代码"；反过来，**六行全不命中也不说明设计没问题**（每类设计问题为什么在这套判据下静默，见 `references/design-review.md` §一）。
 
 | 编号 | 风险 | 概念定义 | 脚本实际判据（代码为准） | 脚本量不到的部分 |
 |------|------|----------|--------------------------|------------------|
@@ -59,7 +83,7 @@ python scripts/risk_diagnose.py --target <项目> --json
 
 **铁律：完成风险诊断前，绝不提出修复建议。**
 
-### 阶段三：质量度量（quality_metrics）
+### 阶段三：质量度量（quality_metrics，线索生成器）
 
 ```bash
 python scripts/quality_metrics.py --target <项目> --json
@@ -68,12 +92,14 @@ python scripts/quality_metrics.py --target <项目> --json
 MI / 圈复杂度 CC / 逻辑行 LOC / 健康分 = 100 - 15×Critical - 5×Warning - 1×Suggestion。
 
 口径说明（避免把度量读成结论）：
+- **健康分是阈值告警的加总，不是设计评价**：它对 §「阶段零」的七类设计问题没有任何判据，一个边界画错的模块可以拿满分。健康分高只能说明"没有触发这几条阈值"。
 - MI 按**整文件**计算，`16.2·ln(LOC)` 项主导，因此 MI 随文件长度单调下降——同一风格的代码，332 行的文件可以低于 15 的门而 12 行的文件轻松过线。MI 低首先说明"文件大"，不说明"设计差"。
 - 健康分按发现条数的**绝对值**扣分，无规模归一：同一份内容复制 20 份即从 85 分掉到 0 分。跨项目比较健康分没有意义，只对"同一范围、同一口径"的前后两次扫描可比。为此两个计分器现在都多输出两个字段：`scanned_lines`（物理行数，供复算）与 `penalty_per_kloc`（密度制扣分 = 15C+5W+1S × 1000 / 行数）——**跨项目、跨规模只能比 `penalty_per_kloc`**；`score` 刻意保留绝对计数，门禁契约不改。
 
 ### 阶段四：增量优化（方法论）
 
 在架构师约束下执行增量改进：每次最多 5 个需求，小步快跑。
+优化的排序依据是阶段零清单第 4 段（那个具体变更多久发生），不是发现条数或扣分权重。
 完整双智能体流程与需求文档规范见 `references/collaboration-workflow.md`，编码执行标准见 `references/coding-conventions.md`。
 
 ### 阶段五：回归防护（regression_guard）
@@ -92,10 +118,11 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 
 ## 按需加载索引
 
-脚本给出数据，判定规则按需读对应参考文档：
+脚本给出线索数据；设计层判断与逐条判定规则按需读对应参考文档：
 
 | 场景 | 读这份 |
 |------|--------|
+| 判定"这是不是设计问题"、设计发现怎么写（五段式契约）、什么情况下不该报 | `design-review.md` |
 | 判定 DIP/ADP/SOLID 违规与假阳性防护 | `architecture-principles.md` |
 | 脚本逐条判据、覆盖盲区（先读它再引用任何数字） | `architecture-principles.md` §四「脚本实测口径」 |
 | 设计架构师需求文档、程序员实现循环 | `collaboration-workflow.md` |
@@ -110,7 +137,8 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 
 | 门禁 | 阈值 | 来源 | 脚本能否直接判红 |
 |------|------|------|------------------|
-| 健康分 | ≥ 70 | 阶段三 | 能，但无规模归一，只可同范围前后比；跨规模看 `health_score.penalty_per_kloc` |
+| 设计清单已做过 | 七类各问过一遍，每条发现五段不缺项 | 阶段零 | 不能——脚本没有"设计问题"这一概念，这条形同自查 |
+| 健康分 | ≥ 70 | 阶段三 | 能，但无规模归一，只可同范围前后比；跨规模看 `health_score.penalty_per_kloc`。**过线不代表设计没问题** |
 | 零退化率 | = 100% | 阶段五 | 能（`compare` 退出码 1）；通过过的测试消失/改名/清空同样判红，有意的删除须 `--allow-removed` 放行 |
 | 新增代码 MI | ≥ 15 | 阶段三 | 需自己按改动文件逐个跑 `--file`，脚本无"新增代码"概念 |
 | 无新增循环依赖 | 0 项 | 阶段二 R5 | 部分：相对导入与包内环检不出，"0 项"≠无环 |
@@ -125,13 +153,13 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 | `quality_metrics.py` | 三 | `--target` 或 `--file`，`--json --min-cc N --quiet` | MI/CC/HV/健康分/热点 |
 | `regression_guard.py` | 五 | 子命令 `record --output F [--test-cmd S] [--cwd D]` / `compare --baseline F --current F [--json] [--allow-removed N] [--allow-removed-file P]` / `evoscore --history F [--gamma G] [--json]` | 测试基线、回归对比（含测试消失判定）、迭代分 |
 
-阶段四（增量优化）是方法论，无脚本；双智能体流程见 `references/collaboration-workflow.md`。
+阶段零（设计判断）和阶段四（增量优化）都是方法论，无脚本：七类提问与五段式契约见 `references/design-review.md`，双智能体流程见 `references/collaboration-workflow.md`。
 
 已知接口差异：`--min-cc` 只过滤 JSON 里的函数清单，不过滤 `hotspots` 与 `average_cc/max_cc`，所以带不带该参数报告的聚合值口径不同；`evoscore` 需要外部历史数组（字段 `iteration/passed/target/regressions`），本仓无生成器，`record` 也不产出它，属于手工维护的可选功能。
 
 四个扫描脚本的语言表与忽略目录表**并不相同**（`.java/.kt` 只有 `arch_scan` 和 `quality_metrics` 认；`venv`/`testdata`/`env` 各脚本过滤与否不一致），同一个 `--target` 下各阶段看到的可能不是同一批文件，`files_analyzed` 必须逐阶段核对再比结论。
 
-全部 Python 3.10+ 标准库零依赖（CI 实测 3.10 / 3.13），输出结构化 JSON，Windows 下自动强制 UTF-8 输出。
+全部 Python 3.10+ 标准库零依赖（CI 矩阵实测 3.10 / 3.12 / 3.13），输出结构化 JSON，Windows 下自动强制 UTF-8 输出。
 
 ## 已知限制（引用脚本结论前必读）
 
@@ -148,6 +176,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 9. **回归防护的硬门已覆盖"测试消失"**：删除 / skip / 改名 / 清空套件都会判红，有意的删除用 `--allow-removed` 或 `--allow-removed-file` 逐条放行并留痕；删掉的是失败测试则不算。仍要注意的是 `--allow-removed` 可以被人为滥用（把真回归的测试"有意删除"掉并放行），所以它必须和"测试总数不得缩减"这类外部自检一起用（`references/regression-guard.md` §5.1 给了可直接用的步骤）。
 10. **`non_asymmetric_score` 不可用于结论**：实测"3 改进 + 1 真回归"得 +1.98，方向与文档承诺相反；有效的只有回归列表与退出码。
 11. **架构级判断不由脚本给出**：分层是否合理、边界是否泄漏、抽象是否多余、命名是否属于统一语言，只能靠读代码得出。脚本的作用是把怀疑范围缩小到具体文件，不是替你判定。
+12. **五个脚本对"设计问题"零判据**：`references/design-review.md` §一定义的七类里，没有一类由脚本实现（变化边界要靠 git 共变史、不变量归属要靠人工找第二条表达、概念映射没有词表可比……）。因此"R1-R6 零条发现 + 健康分 100"这个组合**不是设计合格的证据**，它只说明没有触发这几条阈值。阶段零跳过之后，后面所有数字都会被误当结论引用。
 
 ## 协同
 

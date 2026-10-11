@@ -1,18 +1,21 @@
 # arch-optimize
 
-Architecture optimization skill: six decay risk scanning (R1-R6), architect-programmer dual-agent collaboration, and quantitative regression guarding. 5 stdlib-only Python scripts, zero external dependencies.
+Architecture optimization skill: a design-review layer (what a design problem *is*), six decay risk scanning (R1-R6), architect-programmer dual-agent collaboration, and quantitative regression guarding. 5 stdlib-only Python scripts, zero external dependencies.
 
 ## Overview
 
-`arch-optimize` delivers a workflow from **architecture analysis** through **incremental optimization** to **regression guarding**:
+`arch-optimize` delivers a workflow from **design judgement** through **architecture analysis** and **incremental optimization** to **regression guarding**:
 
-1. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings
-2. **Architect-Programmer Dual-Agent Collaboration**: strategy (architect) separated from execution (programmer)
-3. **Quantitative Regression Guarding**: asymmetric scoring; quality drops are penalized more than gains are rewarded
+1. **Design Review Layer (Stage Zero)**: seven classes of design problem + a five-part finding contract, answered by reading code and git history **before** running any script — [`references/design-review.md`](references/design-review.md)
+2. **Six Decay Risk Scanning** (brooks-lint, based on 12 classic engineering books): structured R1-R6 diagnosis with Symptom -> Source -> Consequence -> Remedy findings. These are **lead generators, not conclusions.**
+3. **Architect-Programmer Dual-Agent Collaboration**: strategy (architect) separated from execution (programmer)
+4. **Quantitative Regression Guarding**: asymmetric scoring; quality drops are penalized more than gains are rewarded
+
+> The split matters: design problems (where a boundary is drawn, who owns an invariant, whether an abstraction is in the right place) have no mechanical criterion, so no script in this repo detects them. A high health score therefore means "no threshold tripped", not "the design is fine" — and the heaviest design problems usually produce **zero findings** here.
 
 ## Script Tools
 
-All scripts use Python 3.10+ standard library only (zero external dependencies, CI-tested on 3.10 and 3.13) and output structured JSON.
+All scripts use Python 3.10+ standard library only (zero external dependencies; CI matrix tests 3.10, 3.12 and 3.13) and output structured JSON.
 
 | Script | Stage | Function |
 |--------|-------|----------|
@@ -37,6 +40,24 @@ Thresholds and every known blind spot (relative imports not graphed, `@dataclass
 
 False-positive protection (composition-root wiring is not DIP violation, DTOs are not anemic models, etc.) lives in [`references/architecture-principles.md`](references/architecture-principles.md).
 
+## Design Problems (Stage Zero)
+
+Stage Zero runs **before** the scripts. Seven classes, each reduced to one question you can actually answer against this repo:
+
+| Class | The question |
+|-------|--------------|
+| Change boundaries | Which unrelated directories did the last real requirement touch? |
+| Coupling direction and strength | If B changes, must A change too — and which part of B does A actually use? |
+| Abstraction level and location | How many real callers does this abstraction have? How many files does adding a second implementation hit? |
+| Invariant ownership | If this rule is bypassed, which line blows up, and who notices first? |
+| Evolvability / reversibility | To replace X in six months, how many files move, and which test goes red? |
+| Concept -> code fidelity | The word product uses — how many names does it have in code, and are they the same thing? |
+| Consistency / single source of truth | When this value or contract changes, how many places must you remember to edit? |
+
+Every design finding must be written as five parts, none optional: **the decision (naming the file/symbol) -> its cost and its benefit -> the evidence I bet it is wrong on -> what happens if change X lands -> why the scripts cannot see it.** Severity comes from how soon X arrives, not from a score. Findings like "N violations found" or "consider refactoring" are rejected by contract: they carry no decision, no cost, no condition.
+
+Full definitions, evidence-gathering steps, per-class explanations of why the scanners stay silent, and the case for *not* reporting a design problem: [`references/design-review.md`](references/design-review.md).
+
 ## Installation
 
 Requires Python 3.10+ only. No dependencies to install.
@@ -56,9 +77,9 @@ python tests/test_smoke.py    # zero-dependency smoke tests (standalone)
 pytest                        # same suite via pytest, if installed
 ```
 
-The suite builds a sample two-package project, runs all five scripts against it, asserts that each JSON payload contains the expected keys (plus one `pkg_a -> pkg_b` edge), checks that `risk_diagnose` output is deterministic, verifies that a real `pass -> fail` is reported as a regression and that `compare` exits non-zero for it, fails loudly when `record` fails instead of skipping, and pins the documented CLI surface: every flag used in `SKILL.md`/`README.md` must exist in the corresponding script's argparse, and references to non-existent helper scripts or to an untested Python version make the run fail.
+The suite builds a sample two-package project, runs all five scripts against it, asserts that each JSON payload contains the expected keys (plus one `pkg_a -> pkg_b` edge), checks that `risk_diagnose` output is deterministic, verifies that a real `pass -> fail` is reported as a regression and that `compare` exits non-zero for it, fails loudly when `record` fails instead of skipping, and pins the documented CLI surface: every flag used in `SKILL.md`/`README.md` must exist in the corresponding script's argparse, and references to non-existent helper scripts or to an untested Python version make the run fail. It also pins the design layer: `references/design-review.md` must exist with all seven problem classes and the five-part finding contract, SKILL.md must keep Stage Zero plus the "lead generator" framing, and no file under `references/` may stay un-indexed.
 
-Deliberately still uncovered: no test asserts that an R1-R6 detector *fires* on a known-bad fixture, and the fixture keeps both packages at the repository root — the one layout that hides `dep_graph`'s `src/` collapse. Those blind spots are documented instead (SKILL.md 「已知限制」) rather than silently asserted-away.
+Detectors that do have a firing fixture: R1 (long/nested functions, via the density and self-scan checks), R3 cross-context downgrade, R5 infrastructure word-boundary, R6 anemic two-tier, and the CC boolean-operator count. Deliberately still uncovered: no fixture asserts R2's fan-out thresholds or R4's single-implementation check fire on known-bad code, and the fixture keeps both packages at the repository root — the one layout that hides `dep_graph`'s `src/` collapse. Those blind spots are documented instead (SKILL.md 「已知限制」) rather than silently asserted-away.
 
 ## Self-Scan Note
 
@@ -89,7 +110,7 @@ python3 scripts/regression_guard.py compare --baseline baseline.json --current c
     --allow-removed test_removed_on_purpose
 ```
 
-Typical agent pipeline: arch_scan → dep_graph → risk_diagnose → quality_metrics → regression_guard, passing each stage's JSON as context to the next.
+Typical agent pipeline: stage zero design judgement (questions + evidence, no script) → arch_scan → dep_graph → risk_diagnose → quality_metrics → regression_guard, passing each stage's JSON as context to the next. Scripts narrow the suspicion; they do not close it.
 
 Two caveats when chaining them: `arch_scan` embeds a `scan_timestamp`, so two runs are byte-different across a second boundary and must not be diffed naively; `dep_graph` treats the first directory level under `--target` as a module, so pointing it at a repository root with a `src/` layout collapses every file into one `src` node and yields an empty graph — point it at the module root instead.
 
@@ -135,7 +156,8 @@ arch-optimize/
 │   ├── risk_diagnose.py              # Stage 2: R1-R6 diagnosis
 │   ├── quality_metrics.py            # Stage 3: MI/CC/HV/health score
 │   └── regression_guard.py           # Stage 5: baseline record & compare
-└── references/                       # Load on demand per SKILL.md index
+└── references/                       # 7 docs, load on demand per SKILL.md index
+    ├── design-review.md              # Stage 0: seven classes of design problem + five-part finding contract
     ├── architecture-principles.md    # Clean Architecture, SOLID thresholds, R1-R6 detail + measured script caliber
     ├── coding-conventions.md         # C/C++/Rust/Go/TypeScript conventions
     ├── quality-metrics.md            # MI formula details, tech debt Pain×Spread ranking

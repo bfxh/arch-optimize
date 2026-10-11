@@ -794,6 +794,50 @@ def _check_cli_surface_matches_docs():
                     )
 
 
+def _check_design_review_contract():
+    """设计评审层必须存在、七类齐全、五段契约齐全，且没有孤儿参考文档。"""
+    ref_dir = os.path.join(ROOT, "references")
+    design_path = os.path.join(ref_dir, "design-review.md")
+    assert os.path.exists(design_path), (
+        "references/design-review.md 缺失（阶段零的定义来源）"
+    )
+
+    with open(design_path, encoding="utf-8") as fh:
+        text = fh.read()
+
+    seven = (
+        "### 1. 变化边界画错",
+        "### 2. 耦合的方向与强度",
+        "### 3. 抽象的层次与位置",
+        "### 4. 不变量归属",
+        "### 5. 演化能力与可逆性",
+        "### 6. 概念到代码的映射保真（统一语言）",
+        "### 7. 一致性与单一事实源",
+    )
+    missing = [c for c in seven if c not in text]
+    assert not missing, f"design-review.md 七类设计问题缺标题 {missing}"
+
+    contract = (
+        "1. **决策是什么**",
+        "2. **代价与收益**",
+        "3. **我赌它错的依据**",
+        "4. **若 X 变更发生会怎样**",
+        "5. **为什么脚本看不到它**",
+    )
+    missing = [c for c in contract if c not in text]
+    assert not missing, f"design-review.md 五段式发现契约缺项 {missing}"
+
+    with open(os.path.join(ROOT, "SKILL.md"), encoding="utf-8") as fh:
+        skill = fh.read()
+
+    for name in sorted(os.listdir(ref_dir)):
+        assert name in skill, f"references/{name} 未被 SKILL.md 索引（按需加载会失效）"
+
+    assert "### 阶段零：设计判断" in skill, "SKILL.md 缺少阶段零：设计判断章节"
+    assert skill.count("线索生成器") >= 2, "SKILL.md 未把 R1-R6/健康分定位为线索生成器"
+    assert "零条发现" in skill, "SKILL.md 未声明『最重的设计问题往往零条发现』"
+
+
 def test_smoke(tmp_path=None):
     sample = make_sample_project()
     try:
@@ -809,6 +853,7 @@ def test_smoke(tmp_path=None):
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()
+        _check_design_review_contract()
     finally:
         shutil.rmtree(sample, ignore_errors=True)
 
