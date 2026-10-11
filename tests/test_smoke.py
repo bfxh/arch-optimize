@@ -347,6 +347,40 @@ def _check_r6_anemic_detector():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _check_r5_infra_word_boundary():
+    """R5 基础设施匹配必须是词边界：裸子串会把 costs/post/host/netlog 判成 Critical。"""
+    root = tempfile.mkdtemp(prefix="arch-opt-r5-")
+    # (标签, 文件名, 代码, 是否应命中"直接依赖基础设施")
+    cases = [
+        ("database", "a.py", "import database", True),
+        ("redis", "a.py", "import redis", True),
+        ("sqlalchemy", "a.py", "import sqlalchemy", True),
+        ("my_db(snake_case)", "a.py", "import my_db", True),
+        ("net/http(go)", "a.go", 'import (\n"net/http"\n)', True),
+        ("costs", "a.py", "import costs", False),
+        ("post", "a.py", "import post", False),
+        ("host", "a.py", "import host", False),
+        ("netlog", "a.py", "import netlog", False),
+    ]
+    try:
+        wrong = []
+        for tag, fname, code, should in cases:
+            shutil.rmtree(root, ignore_errors=True)
+            path = os.path.join(root, "domain", fname)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(code + "\n\n\ndef go(q):\n    return q\n")
+            data = run_script(
+                "risk_diagnose.py", "--target", root, "--risk", "R5", "--json"
+            )
+            hit = any("基础设施" in f["symptom"] for f in data["findings"])
+            if hit != should:
+                wrong.append(f"{tag}: 期望命中={should} 实际={hit}")
+        assert not wrong, "R5 infra 匹配偏差:\n  " + "\n  ".join(wrong)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_r3_cross_context_duplication():
     """R3 跨上下文重复：跨目录要报 Warning（改前 0 条被豁免掉），同目录保持 Critical。"""
     root = tempfile.mkdtemp(prefix="arch-opt-r3-")
@@ -623,6 +657,7 @@ def test_smoke(tmp_path=None):
         _check_regression_is_detected()
         _check_gate_blocks_vanish()
         _check_r3_cross_context_duplication()
+        _check_r5_infra_word_boundary()
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()

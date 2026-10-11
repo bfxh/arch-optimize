@@ -171,7 +171,7 @@
 | R2 | `detect_r2()` | 该文件 import 的去重数量：Python 折叠到顶层包，其他语言按原始 import 串 | 不是"变更触及文件数"（那需要 git 共变历史）；同耦合度下 Python 偏松、C/C++ 偏严 |
 | R3 | `detect_r3()` | 函数体 8-gram Jaccard + ≥2 位数字面量的跨文件重复次数 | 原先跨顶层目录被"不同限界上下文"无条件豁免（同一份代码跨目录 0 条、健康分 95；同目录 3 条、健康分 0）→ **已修：跨上下文报 Warning 并标出两个上下文名，同上下文仍按 0.6/0.8 分档**；仍未修：每个不同字面量单独出一条 Critical，阈值/端口/下标会成批刷屏 |
 | R4 | `detect_r4()`、`_r4_python()`、`_r4_ts_js()` | CC>20（算法关键词路径降为 Warning）；**同一文件内**只有一个实现的抽象/接口/工厂 | 抽象与实现分居两文件（常见布局）→ 检不出；TS 里 `interface Props` + 同文件组件（惯用写法）→ 必然误报 |
-| R5 | `detect_r5()` | 解析到仓内文件后的循环依赖；领域层 import 命中 infra 关键词；层级反向 | `from . import x` 不建边 → 包内互引的真环检不出；infra 关键词是**裸子串匹配**（`os` 命中 `costs`/`post`/`compose`）→ 假 Critical；stdlib 名可能与仓内同名文件误绑定 |
+| R5 | `detect_r5()` | 解析到仓内文件后的循环依赖；领域层 import 命中 infra 标记（词边界匹配）；层级反向 | `from . import x` 不建边 → 包内互引的真环检不出；stdlib 名可能与仓内同名文件误绑定。**原先是裸子串匹配，已修**：实测 6 个非基础设施名里 4 个（costs/post/host/netlog）被判 Critical"领域层直接依赖基础设施"，改词边界后 6 个全部不再误报、5 个真基础设施（database/redis/sqlalchemy/my_db/Go net/http）全命中。代价：复合名须在 `INFRA_MARKERS` 显式登记 |
 | R6 | `detect_r6()`、`_r6_python_anemic()` | 目录名命中通用技术词；上下文字符表关键词出现；Python 类"公开面全是访问器" = Warning，"只有字段无任何方法" = Suggestion | 改前的判据是**逻辑不可达的死代码**：`behavioral` 不排除 property 装饰的方法，于是"有 property ⇒ behavioral 非空 ⇒ 条件永不成立"，实测连手写 getter/setter 都不报；已修。纯字段类只给 Suggestion——值对象与 ORM 实体也长这样，脚本分不出意图 |
 
 **跨语言可比性**：非 Python 的行数/嵌套/CC 来自正则与括号计数，字符串、注释、多行宏都会计入，且布尔运算符 `&&`/`||` 当前不计入，CC 系统性偏低——因此 CC 阈值门对 C/C++/Go/Rust/TS/JS/Java 几乎不触发。这些语言的发现位置串还可能带错误函数名（Rust 报 `pub`、TS 报 `export`）。把脚本数字用于非 Python 项目时，只当"提示"，不当"判定"。

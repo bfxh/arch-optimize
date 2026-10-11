@@ -134,6 +134,21 @@ INFRA_MARKERS = (
     "s3",
     "elastic",
     "graphql",
+    # 下面这些是显式登记的复合模块名。裸子串匹配被撤掉后（见 imports_infra），
+    # 这类含在长名字里的基础设施必须显式列出才认得出来
+    "sqlalchemy",
+    "sqlite3",
+    "psycopg2",
+    "pymongo",
+    "aioredis",
+    "boto3",
+    "sqlx",
+)
+
+# R5 基础设施匹配：词边界 + 忽略大小写（标记里有 "net/http" 这种含 / 的）
+INFRA_RE = re.compile(
+    "|".join(r"\b" + re.escape(m) + r"\b" for m in INFRA_MARKERS),
+    re.IGNORECASE,
 )
 
 # Composition roots are exempt from R5 layer-violation checks (false-positive guard)
@@ -618,9 +633,20 @@ def is_domain_layer(rel_path):
 
 
 def imports_infra(modules):
-    """True if any imported module references infrastructure."""
-    low = " ".join(modules).lower()
-    return any(marker in low for marker in INFRA_MARKERS)
+    """True if any imported module references infrastructure (word-boundary match).
+
+    改前是裸子串 `marker in low`：'os' 命中 costs/post/host、'net' 命中 netlog，
+    实测 6 个非基础设施模块里 4 个被 Critical 判成"领域层直接依赖基础设施"，
+    误报出在最高严重级上，所以改精确匹配。
+    先把 `_`、`-` 归一成 `.`（注意：正则里 `_` 是词字符、不构成 \b 边界，
+    直接 \b 会漏掉 my_db / db_service 这类 snake_case 名），再按词边界匹配。
+    代价：sqlalchemy 这类长名字不再靠子串蒙中，须在 INFRA_MARKERS 显式登记。
+    """
+    for mod in modules:
+        normalized = re.sub(r"[_\-]", ".", mod)
+        if INFRA_RE.search(normalized):
+            return True
+    return False
 
 
 # ── R1 Cognitive Overload ───────────────────────────────────────────

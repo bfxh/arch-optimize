@@ -30,7 +30,7 @@ All scripts use Python 3.10+ standard library only (zero external dependencies, 
 | R2 Change Propagation | one change hits many places | per-file import fan-out: >7 Critical, ≥5 Warning (not git co-change count) |
 | R3 Knowledge Duplication | one decision expressed twice | 8-gram Jaccard ≥0.6/≥0.8 within the **same top-level directory**; 2+-digit literals repeated ≥3 times across ≥2 files = Critical |
 | R4 Accidental Complexity | code harder than the problem | **CC >20** = Critical (Warning on algorithmic paths); abstraction with a single implementation *in the same file* = Warning |
-| R5 Dependency Disorder | dependencies point one way | file-level cycles = Critical; domain importing an infra-looking name = Critical; inner depending on outer = Critical |
+| R5 Dependency Disorder | dependencies point one way | file-level cycles = Critical; domain importing a module that matches an infrastructure marker (word-boundary, `sqlalchemy`-style compounds listed explicitly) = Critical; inner depending on outer = Critical |
 | R6 Domain Model Distortion | code mirrors the domain | generic directory name = Warning; cross-context keyword = Warning; Python class whose public surface is only accessors = Warning, field-only class = Suggestion |
 
 Thresholds and every known blind spot (relative imports not graphed, `@dataclass` never flagged as anemic, cross-context duplication reported as Warning only — scaffolding vs domain vocabulary cannot be separated, non-Python CC under-counted by the `&&`/`||` regex, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
