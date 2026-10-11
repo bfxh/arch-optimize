@@ -39,10 +39,9 @@ jobs:
         # 规则集在 pyproject [tool.ruff.lint] 显式声明；被 ignore 的 4 类带着理由，不是"整体跳过检查"
         run: ruff check .
 
-      - name: Run Ruff format check (informational)
-        # 仓内 6 个文件尚未按 ruff format 排版；等一次纯排版提交后再摘掉本行为
+      - name: Run Ruff format check (blocking)
+        # 纯排版已入库（见 style(format) 提交），此步开始判红
         run: ruff format . --check
-        continue-on-error: true
 
       - name: Run Ruff with all rules (report only)
         run: ruff check . --select ALL --output-format=json > ruff-report.json || true
