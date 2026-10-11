@@ -23,9 +23,10 @@ import subprocess
 import sys
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Test command auto-detection ─────────────────────────────────────
 
@@ -40,7 +41,7 @@ def detect_test_cmd(cwd: str = ".") -> str:
     pyproject = os.path.join(cwd, "pyproject.toml")
     if os.path.exists(pyproject):
         try:
-            with open(pyproject, "r", encoding="utf-8", errors="replace") as f:
+            with open(pyproject, encoding="utf-8", errors="replace") as f:
                 if "[tool.pytest" in f.read():
                     return "python -m pytest --tb=short -v"
         except Exception:
@@ -49,7 +50,7 @@ def detect_test_cmd(cwd: str = ".") -> str:
     pkg_json = os.path.join(cwd, "package.json")
     if os.path.exists(pkg_json):
         try:
-            with open(pkg_json, "r", encoding="utf-8", errors="replace") as f:
+            with open(pkg_json, encoding="utf-8", errors="replace") as f:
                 pkg = json.load(f)
                 deps = {}
                 deps.update(pkg.get("dependencies", {}))
@@ -69,8 +70,8 @@ def detect_test_cmd(cwd: str = ".") -> str:
 def parse_go_test_json(output: str) -> dict:
     """Parse `go test -json` output. Each line is a JSON object."""
     results = {}
-    for line in output.splitlines():
-        line = line.strip()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
         if not line or not line.startswith("{"):
             continue
         try:
@@ -110,7 +111,7 @@ def parse_pytest_verbose(output: str) -> dict:
 
 def parse_jest_json(output: str) -> dict:
     """Parse `jest --json` output."""
-    results = {}
+    results: dict = {}
     data = None
     try:
         data = json.loads(output)
@@ -196,6 +197,7 @@ def run_tests(test_cmd: str, cwd: str = ".") -> dict:
             capture_output=True,
             text=True,
             timeout=600,
+            check=False,  # 测试套件失败时非零退出仍要解析其输出
         )
         output = proc.stdout + "\n" + proc.stderr
     except subprocess.TimeoutExpired:
@@ -367,13 +369,13 @@ def compare_results(baseline: dict, current: dict) -> dict:
 def cmd_compare(args) -> int:
     """Compare baseline and current test results."""
     try:
-        with open(args.baseline, "r", encoding="utf-8") as f:
+        with open(args.baseline, encoding="utf-8") as f:
             baseline = json.load(f)
     except Exception as e:
         print(f"Error reading baseline: {e}", file=sys.stderr)
         return 1
     try:
-        with open(args.current, "r", encoding="utf-8") as f:
+        with open(args.current, encoding="utf-8") as f:
             current = json.load(f)
     except Exception as e:
         print(f"Error reading current: {e}", file=sys.stderr)
@@ -394,7 +396,7 @@ def print_human_compare(result: dict):
     b = result["baseline"]
     c = result["current"]
     print(f"\n{'='*60}")
-    print(f"  arch-optimize Regression Guard - Comparison Report")
+    print("  arch-optimize Regression Guard - Comparison Report")
     print(f"{'='*60}")
     print(f"  {'Metric':<30s} {'Baseline':>12s} {'Current':>12s}")
     print(f"  {'-'*56}")
@@ -413,19 +415,19 @@ def print_human_compare(result: dict):
 
     if result["regressions"]:
         print(f"\n  {'-'*56}")
-        print(f"  REGRESSIONS (Critical):")
+        print("  REGRESSIONS (Critical):")
         for r in result["regressions"]:
             print(f"    {r['test']}: {r['was']} -> {r['now']}")
 
     if result["performance_regressions"]:
         print(f"\n  {'-'*56}")
-        print(f"  PERFORMANCE REGRESSIONS (Warning):")
+        print("  PERFORMANCE REGRESSIONS (Warning):")
         for p in result["performance_regressions"]:
             print(f"    {p['test']}: {p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)")
 
     if result["improvements"]:
         print(f"\n  {'-'*56}")
-        print(f"  IMPROVEMENTS:")
+        print("  IMPROVEMENTS:")
         for i in result["improvements"]:
             print(f"    {i['test']}: {i['was']} -> {i['now']}")
 
@@ -521,7 +523,7 @@ def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
 def cmd_evoscore(args) -> int:
     """Calculate EvoScore from history file."""
     try:
-        with open(args.history, "r", encoding="utf-8") as f:
+        with open(args.history, encoding="utf-8") as f:
             history = json.load(f)
     except Exception as e:
         print(f"Error reading history: {e}", file=sys.stderr)
@@ -537,7 +539,7 @@ def cmd_evoscore(args) -> int:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print(f"\n{'='*60}")
-        print(f"  arch-optimize EvoScore Report")
+        print("  arch-optimize EvoScore Report")
         print(f"{'='*60}")
         print(f"  Gamma:                {result['gamma']}")
         print(f"  Iterations:           {result['iterations']}")

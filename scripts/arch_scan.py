@@ -22,9 +22,10 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Constants ──────────────────────────────────────────────────────
 
@@ -235,7 +236,8 @@ def detect_frameworks(files):
     gomod = by_name.get("go.mod")
     if gomod:
         try:
-            content = open(gomod, encoding="utf-8", errors="replace").read()
+            with open(gomod, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
             for key, label in FRAMEWORK_PATTERNS["go.mod"].items():
                 if key in content:
                     found.append(label)
@@ -245,7 +247,8 @@ def detect_frameworks(files):
     cargo = by_name.get("Cargo.toml")
     if cargo:
         try:
-            content = open(cargo, encoding="utf-8", errors="replace").read()
+            with open(cargo, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
             for key, label in FRAMEWORK_PATTERNS["Cargo.toml"].items():
                 if key in content:
                     found.append(label)
@@ -256,8 +259,8 @@ def detect_frameworks(files):
     for pyf in ("requirements.txt", "setup.py"):
         if by_name.get(pyf):
             try:
-                py_source += "\n" + open(by_name[pyf], encoding="utf-8",
-                                         errors="replace").read().lower()
+                with open(by_name[pyf], encoding="utf-8", errors="replace") as fh:
+                    py_source += "\n" + fh.read().lower()
             except Exception:
                 pass
     for key, label in PYTHON_FRAMEWORKS.items():
@@ -312,15 +315,15 @@ def locate_arch_docs(target, files):
     by_name = {}
     for rel, full in files:
         bn = os.path.basename(rel)
-        if bn in ARCH_DOCS:
-            if bn not in by_name or "/" not in rel:
-                by_name[bn] = (rel, full)
+        if bn in ARCH_DOCS and (bn not in by_name or "/" not in rel):
+            by_name[bn] = (rel, full)
     for doc_name in ARCH_DOCS:
         if doc_name in by_name:
             rel, full = by_name[doc_name]
             desc = ""
             try:
-                first = open(full, encoding="utf-8", errors="replace").readline().strip()
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    first = fh.readline().strip()
                 desc = first.lstrip("#").strip()
             except Exception:
                 pass
@@ -355,7 +358,8 @@ def detect_modules(files, max_depth):
 def extract_imports(filepath, lang):
     """Extract import paths from a source file."""
     try:
-        source = open(filepath, encoding="utf-8", errors="replace").read()
+        with open(filepath, encoding="utf-8", errors="replace") as fh:
+            source = fh.read()
     except Exception:
         return []
     imports = []
@@ -437,7 +441,7 @@ def analyze_modules(target, files, modules):
         }
 
     for m in modules:
-        for rel, full, lang in module_files[m]:
+        for _rel, full, lang in module_files[m]:
             for imp in extract_imports(full, lang):
                 tgt = _resolve_import_to_module(imp, m, modules)
                 if tgt and tgt in module_info and tgt != m:
@@ -445,7 +449,7 @@ def analyze_modules(target, files, modules):
                     module_info[tgt]["_in"].add(m)
 
     result = []
-    for m, info in module_info.items():
+    for info in module_info.values():
         info["fan_out"] = len(info.pop("_out"))
         info["fan_in"] = len(info.pop("_in"))
         result.append(info)
@@ -523,7 +527,7 @@ def print_tree(node, prefix="", is_last=True, counter=None):
 def print_human_readable(result):
     """Print a human-readable architecture overview."""
     print(f"\n{'='*60}")
-    print(f"  arch-optimize Architecture Scan (Stage 1: Perception)")
+    print("  arch-optimize Architecture Scan (Stage 1: Perception)")
     print(f"{'='*60}")
     print(f"  Target:      {result['target']}")
     print(f"  Scanned:     {result['scan_timestamp']}")
@@ -533,16 +537,16 @@ def print_human_readable(result):
     print(f"  Modules:     {s['total_modules']}")
 
     print(f"\n  {'─'*56}")
-    print(f"  Directory Structure:")
+    print("  Directory Structure:")
     print(f"  {'─'*56}")
     print_tree(result["directory_tree"])
 
     ts = result["tech_stack"]
     print(f"\n  {'─'*56}")
-    print(f"  Tech Stack:")
+    print("  Tech Stack:")
     print(f"  {'─'*56}")
     print(f"  Build system:    {ts['build_system'] or '(none detected)'}")
-    print(f"  Languages:")
+    print("  Languages:")
     for lang in ts["languages"][:8]:
         print(f"    {lang['name']:<14} {lang['file_count']:>5} files ({lang['percentage']}%)")
     if ts["frameworks"]:

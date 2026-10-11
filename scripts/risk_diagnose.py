@@ -34,9 +34,10 @@ from collections import defaultdict
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文 JSON 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Language detection ──────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ def discover_files(target):
 def read_source(filepath):
     """Read file contents as text, never raising."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             return f.read()
     except Exception:
         return ""
@@ -173,16 +174,13 @@ def _python_cc(node):
     """Cyclomatic complexity for a Python function AST node."""
     cc = 1
     for child in ast.walk(node):
-        if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor)):
-            cc += 1
-        elif isinstance(child, ast.ExceptHandler):
+        if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor,
+                              ast.ExceptHandler)):
             cc += 1
         elif isinstance(child, ast.BoolOp):
             cc += len(child.values) - 1
         elif isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp,
-                                ast.GeneratorExp)):
-            cc += 1
-        elif isinstance(child, ast.Assert):
+                                ast.GeneratorExp, ast.Assert)):
             cc += 1
     return cc
 
@@ -197,9 +195,10 @@ def _python_guard_clauses(node):
     """Heuristic count of early-return guard clauses at the top of a function."""
     guards = 0
     for child in node.body:
-        if isinstance(child, ast.Return):
-            guards += 1
-        elif isinstance(child, ast.If) and any(isinstance(s, ast.Return) for s in child.body):
+        is_return = isinstance(child, ast.Return)
+        is_guard_if = isinstance(child, ast.If) and any(
+            isinstance(s, ast.Return) for s in child.body)
+        if is_return or is_guard_if:
             guards += 1
         else:
             break  # only leading guards count
@@ -566,7 +565,7 @@ def detect_r3(files_data):
     inverted = defaultdict(set)  # ngram_hash -> {fid}
     func_records = []  # (fid, rel, fn, token_count)
     fid = 0
-    for (filepath, lang, source, rel), funcs in files_data:
+    for (_filepath, lang, source, rel), funcs in files_data:
         for fn in funcs:
             if fn["lines"] < 10:
                 continue
@@ -612,7 +611,7 @@ def detect_r3(files_data):
 
     # --- magic numbers appearing 3+ times across files ---
     num_locations = defaultdict(list)  # value -> [(rel, line)]
-    for (filepath, lang, source, rel), _funcs in files_data:
+    for (_filepath, lang, source, rel), _funcs in files_data:
         clean = _strip_strings_comments(source, lang)
         for i, line in enumerate(clean.split("\n"), 1):
             for m in MAGIC_NUM_RE.findall(line):
@@ -972,7 +971,7 @@ def diagnose(target, risks, min_severity):
     funcs_per_file = [(fd, extract_functions(fd[2], fd[1])) for fd in files_data]
 
     # Build import edges for R5 (resolve to in-repo files where possible)
-    for filepath, lang, source, rel in files_data:
+    for _filepath, lang, source, rel in files_data:
         mods = extract_imports(source, lang)
         for m in mods:
             resolved = _resolve_import_to_file(m, rel_files)
@@ -980,7 +979,7 @@ def diagnose(target, risks, min_severity):
 
     all_findings = []
     if "R1" in risks:
-        for (filepath, lang, source, rel), _ in funcs_per_file:
+        for (_filepath, lang, source, rel), _ in funcs_per_file:
             all_findings.extend(detect_r1(filepath, lang, source, rel))
     if "R2" in risks:
         for filepath, lang, source, rel in files_data:
@@ -1030,7 +1029,7 @@ def render_human(report):
     bar = "=" * 64
     dash = "-" * 64
     print(f"\n{bar}")
-    print(f"  arch-optimize Risk Diagnosis Report (R1-R6)")
+    print("  arch-optimize Risk Diagnosis Report (R1-R6)")
     print(f"{bar}")
     print(f"  Target:          {report['target']}")
     print(f"  Files analyzed:  {report['files_analyzed']}")
@@ -1043,7 +1042,7 @@ def render_human(report):
     print(f"  Total findings:  {report['total_findings']}")
 
     if not report["findings"]:
-        print(f"\n  No findings matching the filter. Architecture looks healthy.\n")
+        print("\n  No findings matching the filter. Architecture looks healthy.\n")
         print(f"{bar}\n")
         return
 

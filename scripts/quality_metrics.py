@@ -27,9 +27,10 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Language detection ──────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ def count_loc(filepath: str) -> dict:
     in_block_comment = False
 
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             for line in f:
                 stripped = line.strip()
                 physical += 1
@@ -65,7 +66,7 @@ def count_loc(filepath: str) -> dict:
                     if "*/" in stripped:
                         in_block_comment = False
                     continue
-                if stripped.startswith("//") or stripped.startswith("#"):
+                if stripped.startswith(("//", "#")):
                     comments += 1
                     continue
                 if stripped.startswith("/*"):
@@ -89,9 +90,9 @@ def count_loc(filepath: str) -> dict:
 
 def cc_python(filepath: str) -> list:
     """Calculate CC for each function in a Python file using ast."""
-    results = []
+    results: list = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             tree = ast.parse(f.read(), filename=filepath)
     except SyntaxError:
         return results
@@ -102,15 +103,13 @@ def cc_python(filepath: str) -> list:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             cc = 1
             for child in ast.walk(node):
-                if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor)):
-                    cc += 1
-                elif isinstance(child, ast.ExceptHandler):
+                if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor,
+                                      ast.ExceptHandler)):
                     cc += 1
                 elif isinstance(child, ast.BoolOp):
                     cc += len(child.values) - 1
-                elif isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-                    cc += 1
-                elif isinstance(child, ast.Assert):
+                elif isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp,
+                                        ast.GeneratorExp, ast.Assert)):
                     cc += 1
             results.append({
                 "function": node.name,
@@ -162,9 +161,9 @@ DECISION_RE = {
 
 def cc_c_family(filepath: str, lang: str) -> list:
     """Approximate CC for C/C++/Go/Rust/TS/JS/Java using regex."""
-    results = []
+    results: list = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             source = f.read()
     except Exception:
         return results
@@ -177,7 +176,8 @@ def cc_c_family(filepath: str, lang: str) -> list:
     lines = source.split("\n")
 
     for match in func_re.finditer(source):
-        func_name = match.group(match.lastindex) if match.groups() else "anonymous"
+        last = match.lastindex
+        func_name = match.group(last) if last else "anonymous"
         start_line = source[:match.start()].count("\n") + 1
 
         # Find function body extent (simple brace matching)
@@ -235,7 +235,7 @@ OPERANDS_RE = re.compile(
 def calculate_hv(filepath: str) -> float:
     """Calculate Halstead Volume (simplified estimation)."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             source = f.read()
     except Exception:
         return 0.0
@@ -304,7 +304,7 @@ def calculate_health_score(findings: list) -> dict:
 
 # ── Main analysis ───────────────────────────────────────────────────
 
-def analyze_file(filepath: str) -> dict:
+def analyze_file(filepath: str) -> dict | None:
     """Analyze a single source file."""
     ext = Path(filepath).suffix.lower()
     lang = LANG_EXTENSIONS.get(ext)
@@ -467,7 +467,7 @@ Examples:
     else:
         # Human-readable output
         print(f"\n{'='*60}")
-        print(f"  arch-optimize Quality Report")
+        print("  arch-optimize Quality Report")
         print(f"{'='*60}")
         print(f"  Target:           {result['target']}")
         print(f"  Files analyzed:   {result['files_analyzed']}")

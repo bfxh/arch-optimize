@@ -23,9 +23,10 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Language detection ──────────────────────────────────────────────
 
@@ -68,9 +69,9 @@ TS_IMPORT_RE = re.compile(
 
 def parse_python_imports(filepath: str, target: str) -> list:
     """Parse Python imports using ast, returning top-level module names."""
-    imports = []
+    imports: list = []
     try:
-        with open(filepath, "r", encoding="utf-8-sig", errors="replace") as f:
+        with open(filepath, encoding="utf-8-sig", errors="replace") as f:
             tree = ast.parse(f.read(), filename=filepath)
     except Exception:
         return imports
@@ -99,8 +100,8 @@ def parse_go_imports(source: str) -> list:
     """Parse Go import statements, returning import paths."""
     imports = [m.group(1) for m in GO_IMPORT_SINGLE_RE.finditer(source)]
     for block in GO_IMPORT_BLOCK_RE.finditer(source):
-        for line in block.group(1).split("\n"):
-            line = line.strip()
+        for raw_line in block.group(1).split("\n"):
+            line = raw_line.strip()
             if line and not line.startswith("//"):
                 m = GO_IMPORT_LINE_RE.search(line)
                 if m:
@@ -154,7 +155,7 @@ def file_to_module(filepath: str, target: str) -> str:
     return Path(parts[0]).stem if len(parts) == 1 else parts[0]
 
 
-def detect_layer(name: str) -> str:
+def detect_layer(name: str) -> str | None:
     """Detect the architectural layer of a module by name."""
     lower = name.lower()
     for layer, keywords in LAYER_KEYWORDS.items():
@@ -163,13 +164,13 @@ def detect_layer(name: str) -> str:
     return None
 
 
-def find_go_module_path(target: str) -> str:
+def find_go_module_path(target: str) -> str | None:
     """Find the Go module path from go.mod if present."""
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         if "go.mod" in files:
             try:
-                with open(os.path.join(root, "go.mod"), "r",
+                with open(os.path.join(root, "go.mod"),
                           encoding="utf-8-sig", errors="replace") as f:
                     for line in f:
                         if line.strip().startswith("module "):
@@ -179,7 +180,8 @@ def find_go_module_path(target: str) -> str:
     return None
 
 
-def map_go_import(import_path: str, module_path: str, local_dirs: set) -> str:
+def map_go_import(import_path: str, module_path: str | None,
+                  local_dirs: set) -> str | None:
     """Map a Go import path to a module name, or None if external."""
     first = import_path.split("/")[0]
     if "." not in first:
@@ -200,7 +202,8 @@ def map_go_import(import_path: str, module_path: str, local_dirs: set) -> str:
 def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
     """Build a dependency graph from source files under target."""
     target = os.path.abspath(target)
-    adj, modules = {}, {}
+    adj: dict = {}
+    modules: dict = {}
     go_module_path = find_go_module_path(target)
     local_go_dirs = set()
 
@@ -208,10 +211,9 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
     file_list = []
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
-        if max_depth > 0:
-            if len(Path(root).relative_to(target).parts) > max_depth:
-                dirs[:] = []
-                continue
+        if max_depth > 0 and len(Path(root).relative_to(target).parts) > max_depth:
+            dirs[:] = []
+            continue
         for fname in sorted(files):
             ext = Path(fname).suffix.lower()
             if ext not in LANG_EXTENSIONS:
@@ -234,7 +236,7 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
         lang = LANG_EXTENSIONS[ext]
         src_mod = file_to_module(fpath, target)
         try:
-            with open(fpath, "r", encoding="utf-8-sig", errors="replace") as f:
+            with open(fpath, encoding="utf-8-sig", errors="replace") as f:
                 source = f.read()
         except Exception:
             continue
@@ -305,7 +307,7 @@ def find_sccs(nodes: list, adj: dict) -> list:
     return sccs
 
 
-def extract_cycle(scc: list, adj: dict) -> list:
+def extract_cycle(scc: list, adj: dict) -> list | None:
     """Extract a representative cycle path from an SCC."""
     scc_set = set(scc)
     if len(scc) == 1:
@@ -342,7 +344,8 @@ def generate_mermaid(modules: dict, adj: dict, scc_map: dict,
                      scc_size: dict, cycles: list) -> str:
     """Generate a Mermaid graph string."""
     lines = ["graph TD"]
-    by_layer, unlayered = {}, []
+    by_layer: dict = {}
+    unlayered: list = []
     for name in sorted(modules):
         layer = modules[name].get("layer")
         if layer:
@@ -391,7 +394,7 @@ def build_result(target: str, modules: dict, adj: dict) -> dict:
     """Build the complete result dictionary with all graph data."""
     fan_in = {m: 0 for m in modules}
     fan_out = {m: len(adj.get(m, set())) for m in modules}
-    for src, deps in adj.items():
+    for deps in adj.values():
         for dst in deps:
             if dst in fan_in:
                 fan_in[dst] += 1
@@ -484,7 +487,7 @@ Examples:
 
     # Human-readable output
     print(f"\n{'='*60}")
-    print(f"  arch-optimize Dependency Graph")
+    print("  arch-optimize Dependency Graph")
     print(f"{'='*60}")
     print(f"  Target:              {result['target']}")
     print(f"  Modules:             {len(result['modules'])}")
@@ -492,7 +495,7 @@ Examples:
     print(f"  Circular deps:       {len(result['circular_deps'])}")
 
     print(f"\n  {'─'*56}")
-    print(f"  Modules (fan-in / fan-out):")
+    print("  Modules (fan-in / fan-out):")
     print(f"  {'─'*56}")
     for m in result["modules"]:
         layer = f" [{m['layer']}]" if m["layer"] else ""
@@ -504,7 +507,7 @@ Examples:
     print(f"  ```{args.format}")
     for line in graph_str.split("\n"):
         print(f"  {line}")
-    print(f"  ```")
+    print("  ```")
 
     if result["circular_deps"]:
         print(f"\n  {'─'*56}")
