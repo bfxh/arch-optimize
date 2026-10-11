@@ -7,6 +7,8 @@ on:
 
 jobs:
   smoke:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,5 +18,6 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
+      # 零依赖独立运行；含 CLI 契约、回归可判出、record 失败不静默三组断言
       - name: Run smoke tests (zero deps)
         run: python tests/test_smoke.py

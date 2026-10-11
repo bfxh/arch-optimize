@@ -199,8 +199,11 @@ jobs:
           fetch-depth: 0  # 需要 base ref 才能记录基线
 
       - name: Record baseline tests (on base ref)
+        env:
+          # 事件字段走 env 传入，不直接插值进 shell
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git checkout origin/${{ github.base_ref }}
+          git checkout "origin/$BASE_REF"
           python scripts/regression_guard.py record --output baseline.json \
             --test-cmd "python -m pytest -v"
 

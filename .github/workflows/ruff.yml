@@ -32,17 +32,18 @@ jobs:
           python-version: '3.12'
 
       - name: Install Ruff
-        run: pip install ruff
+        run: pip install "ruff==0.16.8"  # 钉版本：否则 ruff 升级会悄悄扩大默认规则集，门忽红或忽绿
 
-      - name: Run Ruff check
-        run: ruff check . --output-format=github
-        continue-on-error: true
+      - name: Run Ruff check (blocking)
+        # 规则集在 pyproject [tool.ruff.lint] 显式声明；被 ignore 的 4 类带着理由，不是"整体跳过检查"
+        run: ruff check .
 
-      - name: Run Ruff format check
+      - name: Run Ruff format check (informational)
+        # 仓内 6 个文件尚未按 ruff format 排版；等一次纯排版提交后再摘掉本行为
         run: ruff format . --check
         continue-on-error: true
 
-      - name: Run Ruff with all rules
+      - name: Run Ruff with all rules (report only)
         run: ruff check . --select ALL --output-format=json > ruff-report.json || true
         continue-on-error: true
 
