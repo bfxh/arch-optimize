@@ -347,6 +347,77 @@ def _check_r6_anemic_detector():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _check_cc_counts_boolean_operators():
+    """非 Python 的 CC 必须数上 &&/||/?/=> —— 把它们塞进 \\b 组里等于永远匹配不到。
+
+    改前实测：if + 7 个 && 真值 9 被算成 2、2 if + 3 || 真值 6 被算成 3、
+    三元 ? 真值 2 被算成 1、Rust match 2 臂真值 3 被算成 2、TS && 真值 4 被算成 2。
+    口径说明：match/switch 本体也计一次（与仓内 C switch+case 口径一致，
+    实测 Rust match 2 臂与 C switch+2 case 都是 4）。
+    """
+    root = tempfile.mkdtemp(prefix="arch-opt-cc-")
+    cases = [
+        (
+            "a.c",
+            "int f(int v0,int v1,int v2,int v3,int v4,int v5,int v6,int v7){\n"
+            "    if (" + " && ".join(f"v{i}" for i in range(8)) + ") { return 1; }\n"
+            "    return 0;\n}\n",
+            9,
+            "C: if + 7 个 &&",
+        ),
+        (
+            "b.c",
+            "int g(int v0,int v1,int v2,int v3){\n"
+            "    if (v0) { return 1; }\n    if ("
+            + " || ".join(f"v{i}" for i in range(4))
+            + ") { return 2; }\n    return 0;\n}\n",
+            6,
+            "C: 2 if + 3 ||",
+        ),
+        ("c.c", "int h(int a){\n    return a > 0 ? 1 : 0;\n}\n", 2, "C: 三元 ?"),
+        (
+            "d.rs",
+            "fn f(y: i32) -> i32 {\n    match y {\n        1 => 2,\n        _ => 0,\n    }\n}\n",
+            4,
+            "Rust: match 2 臂（本体也计，与 C switch 同口径）",
+        ),
+        (
+            "e.ts",
+            "export function k(a: boolean, b: boolean, c: boolean): number {\n"
+            "    if (a && b && c) { return 1; }\n    return 0;\n}\n",
+            4,
+            "TS: if + 2 个 &&",
+        ),
+        # 反向：可选参数的 ? 不该被算成决策
+        (
+            "f.ts",
+            "export function t(x?: number, y?: string): void {\n    return;\n}\n",
+            1,
+            "TS: 可选参数 ? 不计决策",
+        ),
+        (
+            "g.go",
+            "func q(a int, b int) int {\n    if a > 0 && b > 0 {\n        return 1\n    }\n"
+            "    return 0\n}\n",
+            3,
+            "Go: if + 1 &&",
+        ),
+    ]
+    try:
+        wrong = []
+        for fname, code, expected, label in cases:
+            path = os.path.join(root, fname)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(code)
+            data = run_script("quality_metrics.py", "--file", path, "--json")
+            got = data["files"][0]["cyclomatic_complexity"]["functions"][0]["cc"]
+            if got != expected:
+                wrong.append(f"{label}: 期望 CC={expected} 实际={got}")
+        assert not wrong, "CC 计数偏差:\n  " + "\n  ".join(wrong)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_r5_infra_word_boundary():
     """R5 基础设施匹配必须是词边界：裸子串会把 costs/post/host/netlog 判成 Critical。"""
     root = tempfile.mkdtemp(prefix="arch-opt-r5-")
@@ -658,6 +729,7 @@ def test_smoke(tmp_path=None):
         _check_gate_blocks_vanish()
         _check_r3_cross_context_duplication()
         _check_r5_infra_word_boundary()
+        _check_cc_counts_boolean_operators()
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()

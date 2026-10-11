@@ -142,21 +142,23 @@ def cc_python(filepath: str) -> list:
     return results
 
 
-# Decision keywords for C-family languages
+# Decision keywords for C-family languages.
+# 注意：&&、||、? 这些标点分支必须放在 \b 组外——非词字符两侧没有词边界，
+# 放进去等于永远匹配不到。实测改前 if+7 个 && 的真值 CC=9 被算成 2。
 C_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b",
+    r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|",
     re.MULTILINE,
 )
 
-# Decision keywords for Go
+# Decision keywords for Go（Go 无三元，无 ? 分支）
 GO_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|switch|case|select|&&|\|\|)\b",
+    r"\b(?:if|else\s+if|for|switch|case|select)\b|&&|\|\|",
     re.MULTILINE,
 )
 
 # Decision keywords for Rust
 RUST_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|while|loop|match|=>|&&|\|\|)\b",
+    r"\b(?:if|else\s+if|for|while|loop|match)\b|=>|&&|\|\|",
     re.MULTILINE,
 )
 

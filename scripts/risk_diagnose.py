@@ -256,16 +256,24 @@ FUNC_RE = {
     ),
 }
 
+# 标点类决策（&& || ? =>）必须放在 \b 组外：非词字符两侧没有词边界，
+# 塞进去永远匹配不到。实测改前 if+7 个 && 的真值 CC=9 被算成 2，
+# 于是 CC>15/R4 CC>20 两道门对布尔密集的代码根本不触发。
+# TS/JS 用 \?(?!:) 排除可选属性/参数（foo?: string）不算决策。
 DECISION_RE = {
-    "go": re.compile(r"\b(if|else\s+if|for|switch|case|select|&&|\|\|)\b"),
-    "c": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
-    "cpp": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
-    "rust": re.compile(r"\b(if|else\s+if|for|while|loop|match|=>|&&|\|\|)\b"),
+    "go": re.compile(r"\b(?:if|else\s+if|for|switch|case|select)\b|&&|\|\|"),
+    "c": re.compile(
+        r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|"
+    ),
+    "cpp": re.compile(
+        r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|"
+    ),
+    "rust": re.compile(r"\b(?:if|else\s+if|for|while|loop|match)\b|=>|&&|\|\|"),
     "typescript": re.compile(
-        r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"
+        r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|"
     ),
     "javascript": re.compile(
-        r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"
+        r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|"
     ),
 }
 

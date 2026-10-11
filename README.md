@@ -33,7 +33,7 @@ All scripts use Python 3.10+ standard library only (zero external dependencies, 
 | R5 Dependency Disorder | dependencies point one way | file-level cycles = Critical; domain importing a module that matches an infrastructure marker (word-boundary, `sqlalchemy`-style compounds listed explicitly) = Critical; inner depending on outer = Critical |
 | R6 Domain Model Distortion | code mirrors the domain | generic directory name = Warning; cross-context keyword = Warning; Python class whose public surface is only accessors = Warning, field-only class = Suggestion |
 
-Thresholds and every known blind spot (relative imports not graphed, `@dataclass` never flagged as anemic, cross-context duplication reported as Warning only — scaffolding vs domain vocabulary cannot be separated, non-Python CC under-counted by the `&&`/`||` regex, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
+Thresholds and every known blind spot (relative imports not graphed, `@dataclass` never flagged as anemic, cross-context duplication reported as Warning only — scaffolding vs domain vocabulary cannot be separated, non-Python CC still a regex approximation over comments/strings, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
 
 False-positive protection (composition-root wiring is not DIP violation, DTOs are not anemic models, etc.) lives in [`references/architecture-principles.md`](references/architecture-principles.md).
 
@@ -97,7 +97,7 @@ Two caveats when chaining them: `arch_scan` embeds a `scan_timestamp`, so two ru
 
 Python (.py via `ast`), Go, C/C++, Rust, TypeScript/JavaScript — import parsing, CC calculation, and function extraction for each.
 
-For non-Python languages, CC and function extents come from regex plus brace counting: comments, string literals, and boolean operators (`&&`, `||`) are not counted as decisions, so CC is systematically low and the CC thresholds rarely fire there. Treat those numbers as hints, not verdicts.
+For non-Python languages, CC and function extents still come from regex plus brace counting: comments and string literals pollute brace matching, and `switch`/`match` counts both the construct and its case arms. Boolean operators (`&&`, `||`), the ternary `?` and Rust `=>` arms **are** counted now — they used to be wrapped in a `\b(...)\b` group where punctuation can never match, which silently under-counted CC (an `if` with seven `&&` reported 2 instead of 9). Treat these numbers as hints, not verdicts.
 
 ## Quality Gate Rules
 
