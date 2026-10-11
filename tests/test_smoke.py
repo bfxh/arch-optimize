@@ -234,6 +234,171 @@ def _check_self_scan_claims():
     assert diag["health_score"]["critical"] > 0, "README 说 risk_diagnose 侧有 Critical"
 
 
+def _load_json(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _check_gate_blocks_vanish():
+    """P0：通过过的测试消失/改名/清空，必须判红；放行通道必须可用。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-vanish-")
+    base = os.path.join(out_dir, "baseline.json")
+    cur = os.path.join(out_dir, "current.json")
+    allow = os.path.join(out_dir, "allow.txt")
+    rg = os.path.join(SCRIPTS, "regression_guard.py")
+    try:
+        for out, lines in (
+            (base, ["t.py::a PASSED", "t.py::b PASSED", "t.py::c FAILED"]),
+            # 基线里的 c 是失败、a/b 是通过：删 a 必须拦，删 c 不该拦
+            (cur, ["t.py::b PASSED", "t.py::c FAILED"]),
+        ):
+            p = subprocess.run(
+                [
+                    sys.executable,
+                    rg,
+                    "record",
+                    "--output",
+                    out,
+                    "--test-cmd",
+                    _fake_pytest_cmd(lines),
+                ],
+                capture_output=True,
+                timeout=120,
+                check=False,
+            )
+            assert p.returncode == 0, p.stderr.decode("utf-8", "replace")[:300]
+
+        def compare(*extra):
+            p = subprocess.run(
+                [
+                    sys.executable,
+                    rg,
+                    "compare",
+                    "--baseline",
+                    base,
+                    "--current",
+                    cur,
+                    "--json",
+                    *extra,
+                ],
+                capture_output=True,
+                timeout=120,
+                check=False,
+            )
+            return p.returncode, json.loads(p.stdout.decode("utf-8"))
+
+        rc, r = compare()
+        assert r["gate_passed"] is False, "通过过的测试消失却放行（硬门被绕过）"
+        assert rc == 1, f"有测试消失时退出码必须为 1，实际 {rc}"
+        assert r["unexplained_removed_pass"] == ["t.py::a"], r[
+            "unexplained_removed_pass"
+        ]
+        assert any(f["issue"] == "TEST_REMOVED" for f in r["findings"])
+
+        rc, r = compare("--allow-removed", "t.py::a")
+        assert r["gate_passed"] is True and rc == 0, "显式放行应当通过"
+        assert r["unexplained_removed_pass"] == []
+
+        # 同一放行也可以用文件形式（每行一个名字，# 注释）
+        with open(allow, "w", encoding="utf-8") as f:
+            f.write("# 有意删除的用例\nt.py::a\n")
+        rc, r = compare("--allow-removed-file", allow)
+        assert r["gate_passed"] is True and rc == 0, "--allow-removed-file 应当等效"
+
+        # 改名 = 全部消失，必须同样拦住
+        renamed = os.path.join(out_dir, "renamed.json")
+        with open(renamed, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "command": "fake",
+                    "results": {
+                        f"renamed_{k}": v
+                        for k, v in _load_json(base)["results"].items()
+                    },
+                },
+                f,
+            )
+        p = subprocess.run(
+            [
+                sys.executable,
+                rg,
+                "compare",
+                "--baseline",
+                base,
+                "--current",
+                renamed,
+                "--json",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        r = json.loads(p.stdout.decode("utf-8"))
+        assert r["gate_passed"] is False and p.returncode == 1, "改名绕过未被拦住"
+
+        # 清空整个套件：必须拦住
+        empty = os.path.join(out_dir, "empty.json")
+        with open(empty, "w", encoding="utf-8") as f:
+            json.dump({"command": "fake", "results": {}}, f)
+        p = subprocess.run(
+            [
+                sys.executable,
+                rg,
+                "compare",
+                "--baseline",
+                base,
+                "--current",
+                empty,
+                "--json",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        r = json.loads(p.stdout.decode("utf-8"))
+        assert r["gate_passed"] is False and p.returncode == 1, "清空套件未被拦住"
+        assert r["zero_regression_rate"] == 100.0, (
+            "零退化率仍是 100%（这正是要修的口径）"
+        )
+
+        # 删掉的是失败测试：不拦（这是合法的清理）
+        dropfail = os.path.join(out_dir, "dropfail.json")
+        with open(dropfail, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "command": "fake",
+                    "results": {
+                        k: v
+                        for k, v in _load_json(base)["results"].items()
+                        if k != "t.py::c"
+                    },
+                },
+                f,
+            )
+        p = subprocess.run(
+            [
+                sys.executable,
+                rg,
+                "compare",
+                "--baseline",
+                base,
+                "--current",
+                dropfail,
+                "--json",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        r = json.loads(p.stdout.decode("utf-8"))
+        assert r["gate_passed"] is True and p.returncode == 0, (
+            "删除一个失败的测试不该判红（会被记为 removed_fail）"
+        )
+        assert r["removed_fail"] == ["t.py::c"], r["removed_fail"]
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 EXPECTED_FLAGS = {
     "arch_scan.py": {"--target", "--json", "--depth"},
     "dep_graph.py": {"--target", "--json", "--output", "--format", "--max-depth"},
@@ -245,6 +410,8 @@ EXPECTED_FLAGS = {
         "--cwd",
         "--baseline",
         "--current",
+        "--allow-removed",
+        "--allow-removed-file",
         "--history",
         "--gamma",
         "--json",
@@ -307,6 +474,7 @@ def test_smoke(tmp_path=None):
         _check_stage2_3(sample)
         _check_regression_guard()
         _check_regression_is_detected()
+        _check_gate_blocks_vanish()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()
     finally:

@@ -11,8 +11,16 @@ Usage:
     python3 regression_guard.py record --output baseline.json
     python3 regression_guard.py record --output current.json --test-cmd "go test ./... -v -json"
     python3 regression_guard.py compare --baseline baseline.json --current current.json
-    python3 regression_guard.py compare --baseline baseline.json --current current.json --json
+    python3 regression_guard.py compare --baseline baseline.json --current current.json \
+        --json --allow-removed test_removed_on_purpose
+    python3 regression_guard.py compare --baseline baseline.json --current current.json \
+        --allow-removed-file allowed_deletions.txt
     python3 regression_guard.py evoscore --history history.json --gamma 1.5
+
+Gate: `compare` exits 1 when a previously-passing test fails, or when a
+previously-passing test is absent and not listed via --allow-removed /
+--allow-removed-file (renames, deletes, skips and an emptied suite all fall in
+the second case). Deleting a test that was failing is allowed.
 """
 
 import argparse
@@ -265,8 +273,16 @@ def cmd_record(args) -> int:
 # ── compare subcommand ─────────────────────────────────────────────
 
 
-def compare_results(baseline: dict, current: dict) -> dict:
-    """Compare baseline and current test results."""
+def compare_results(
+    baseline: dict, current: dict, allow_removed: set | None = None
+) -> dict:
+    """Compare baseline and current test results.
+
+    allow_removed: test names whose disappearance is accepted without failing
+    the hard gate (legitimate deletions, e.g. a removed feature). Anything else
+    that used to pass and is now absent counts as a failure.
+    """
+    allow_removed = set(allow_removed or ())
     base_tests = baseline.get("results", {})
     curr_tests = current.get("results", {})
 
@@ -274,6 +290,8 @@ def compare_results(baseline: dict, current: dict) -> dict:
     improvements = []
     new_tests = []
     removed_tests = []
+    removed_pass = []
+    removed_fail = []
     perf_regressions = []
 
     all_names = set(base_tests.keys()) | set(curr_tests.keys())
@@ -304,6 +322,13 @@ def compare_results(baseline: dict, current: dict) -> dict:
             new_tests.append(name)
         elif b and not c:
             removed_tests.append(name)
+            if b["status"] == "pass":
+                removed_pass.append(name)
+            else:
+                removed_fail.append(name)
+
+    # 通过过的测试消失，且没被 --allow-removed 放行 => 与回归同级的硬门失败
+    unexplained_removed_pass = sorted(set(removed_pass) - allow_removed)
 
     # Zero-regression rate
     total_tasks = len(all_names)
@@ -331,19 +356,29 @@ def compare_results(baseline: dict, current: dict) -> dict:
     total_score = improvement_score - regression_penalty * 2
 
     # Health score (soft gate): 100 - 15*Critical - 5*Warning
-    critical = regression_count
+    critical = regression_count + len(unexplained_removed_pass)
     warning = len(perf_regressions)
     health_score = max(0, 100 - 15 * critical - 5 * warning)
 
     # Gate logic
-    hard_gate_passed = regression_count == 0
+    hard_gate_passed = regression_count == 0 and not unexplained_removed_pass
     soft_gate_passed = health_score >= 70
     gate_passed = hard_gate_passed
 
-    if not hard_gate_passed:
+    if regression_count:
         gate_reason = f"{regression_count} regression(s) detected (hard gate failed)"
+    elif unexplained_removed_pass:
+        gate_reason = (
+            f"{len(unexplained_removed_pass)} previously-passing test(s) vanished "
+            f"without --allow-removed (hard gate failed): "
+            f"{', '.join(unexplained_removed_pass[:5])}"
+            + (" ..." if len(unexplained_removed_pass) > 5 else "")
+        )
     elif not soft_gate_passed:
-        gate_reason = f"Zero regression rate = {zero_reg_rate:.1f}% (soft gate: health={health_score} < 70)"
+        gate_reason = (
+            f"Zero regression rate = {zero_reg_rate:.1f}% "
+            f"(soft gate: health={health_score} < 70)"
+        )
     else:
         gate_reason = f"Zero regression rate = {zero_reg_rate:.1f}%"
 
@@ -356,6 +391,15 @@ def compare_results(baseline: dict, current: dict) -> dict:
                 "issue": "REGRESSION",
                 "test": r["test"],
                 "detail": f"{r['was']} -> {r['now']}",
+            }
+        )
+    for name in unexplained_removed_pass:
+        findings.append(
+            {
+                "severity": "Critical",
+                "issue": "TEST_REMOVED",
+                "test": name,
+                "detail": "was PASS, now absent (未在 --allow-removed 中放行)",
             }
         )
     for p in perf_regressions:
@@ -383,6 +427,9 @@ def compare_results(baseline: dict, current: dict) -> dict:
         "improvements": improvements,
         "new_tests": new_tests,
         "removed_tests": removed_tests,
+        "removed_pass": removed_pass,
+        "removed_fail": removed_fail,
+        "unexplained_removed_pass": unexplained_removed_pass,
         "performance_regressions": perf_regressions,
         "zero_regression_rate": round(zero_reg_rate, 1),
         "non_asymmetric_score": round(total_score, 4),
@@ -391,6 +438,22 @@ def compare_results(baseline: dict, current: dict) -> dict:
         "gate_reason": gate_reason,
         "findings": findings,
     }
+
+
+def load_allow_removed(args) -> set:
+    """Union of --allow-removed values and names listed in --allow-removed-file."""
+    names = set(args.allow_removed or ())
+    path = args.allow_removed_file
+    if path:
+        try:
+            with open(path, encoding="utf-8") as f:
+                names |= {
+                    ln.strip() for ln in f if ln.strip() and not ln.startswith("#")
+                }
+        except OSError as e:
+            print(f"Error reading --allow-removed-file: {e}", file=sys.stderr)
+            sys.exit(1)
+    return names
 
 
 def cmd_compare(args) -> int:
@@ -408,7 +471,7 @@ def cmd_compare(args) -> int:
         print(f"Error reading current: {e}", file=sys.stderr)
         return 1
 
-    result = compare_results(baseline, current)
+    result = compare_results(baseline, current, load_allow_removed(args))
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -435,6 +498,8 @@ def print_human_compare(result: dict):
     print(f"  Improvements:          {len(result['improvements'])}")
     print(f"  New tests:             {len(result['new_tests'])}")
     print(f"  Removed tests:         {len(result['removed_tests'])}")
+    print(f"    of which were PASS:  {len(result['removed_pass'])}")
+    print(f"    unexplained (gate):  {len(result['unexplained_removed_pass'])}")
     print(f"  Perf regressions:      {len(result['performance_regressions'])}")
     print(f"  Zero-regression rate:  {result['zero_regression_rate']}%")
     print(f"  Non-asymmetric score:  {result['non_asymmetric_score']}")
@@ -445,6 +510,12 @@ def print_human_compare(result: dict):
         print("  REGRESSIONS (Critical):")
         for r in result["regressions"]:
             print(f"    {r['test']}: {r['was']} -> {r['now']}")
+
+    if result["unexplained_removed_pass"]:
+        print(f"\n  {'-' * 56}")
+        print("  DISAPPEARED TESTS (Critical, use --allow-removed if intended):")
+        for name in result["unexplained_removed_pass"]:
+            print(f"    {name}: PASS -> absent")
 
     if result["performance_regressions"]:
         print(f"\n  {'-' * 56}")
@@ -634,6 +705,19 @@ Examples:
     p_compare.add_argument("--baseline", required=True, help="Baseline JSON file")
     p_compare.add_argument("--current", required=True, help="Current JSON file")
     p_compare.add_argument("--json", action="store_true", help="Output as JSON")
+    p_compare.add_argument(
+        "--allow-removed",
+        action="append",
+        default=[],
+        metavar="TEST_NAME",
+        help="Accept this test's disappearance without failing the gate "
+        "(repeatable). Use only for tests deleted on purpose.",
+    )
+    p_compare.add_argument(
+        "--allow-removed-file",
+        metavar="PATH",
+        help="File of test names to accept as deleted (one per line, # comments)",
+    )
     p_compare.set_defaults(func=cmd_compare)
 
     # evoscore
