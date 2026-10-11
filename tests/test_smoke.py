@@ -77,7 +77,9 @@ def _check_stage1(sample):
     for key in ("modules", "edges", "circular_deps", "mermaid"):
         assert key in dep, f"dep_graph missing key: {key}"
     edges = {(e["from"], e["to"]) for e in dep.get("edges", [])}
-    assert ("pkg_a", "pkg_b") in edges, f"expected pkg_a->pkg_b edge, got {sorted(edges)}"
+    assert ("pkg_a", "pkg_b") in edges, (
+        f"expected pkg_a->pkg_b edge, got {sorted(edges)}"
+    )
 
 
 def _check_stage2_3(sample):
@@ -85,8 +87,9 @@ def _check_stage2_3(sample):
     for key in ("findings", "findings_by_risk", "health_score", "risks_scanned"):
         assert key in diag, f"risk_diagnose missing key: {key}"
     assert set(diag["risks_scanned"]) == {"R1", "R2", "R3", "R4", "R5", "R6"}
-    assert diag == run_script("risk_diagnose.py", "--target", sample, "--json"), \
+    assert diag == run_script("risk_diagnose.py", "--target", sample, "--json"), (
         "risk_diagnose should be deterministic"
+    )
 
     qual = run_script("quality_metrics.py", "--target", sample, "--json")
     for key in ("files", "health_score", "average_cc"):
@@ -100,18 +103,38 @@ def _check_regression_guard():
     fake_test = f'"{sys.executable}" -c "print(\'t.py::test_alpha PASSED\')"'
     try:
         p = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS, "regression_guard.py"),
-             "record", "--output", out_a, "--test-cmd", fake_test],
-            capture_output=True, timeout=120, check=False,
+            [
+                sys.executable,
+                os.path.join(SCRIPTS, "regression_guard.py"),
+                "record",
+                "--output",
+                out_a,
+                "--test-cmd",
+                fake_test,
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
         )
         # record 失败必须让测试失败，不允许静默跳过（否则阶段五永远不被验证）
         assert p.returncode == 0 and os.path.exists(out_a), (
             f"record failed: rc={p.returncode}, "
-            f"stderr={p.stderr.decode('utf-8', 'replace')[:300]!r}")
+            f"stderr={p.stderr.decode('utf-8', 'replace')[:300]!r}"
+        )
         cmp_p = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS, "regression_guard.py"),
-             "compare", "--baseline", out_a, "--current", out_a, "--json"],
-            capture_output=True, timeout=120, check=False,
+            [
+                sys.executable,
+                os.path.join(SCRIPTS, "regression_guard.py"),
+                "compare",
+                "--baseline",
+                out_a,
+                "--current",
+                out_a,
+                "--json",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
         )
         result = json.loads(cmp_p.stdout.decode("utf-8"))
         for key in ("regressions", "improvements", "new_tests", "removed_tests"):
@@ -133,24 +156,49 @@ def _check_regression_is_detected():
     cur = os.path.join(out_dir, "current.json")
     rg = os.path.join(SCRIPTS, "regression_guard.py")
     try:
-        for out, lines in ((base, ["t.py::test_a PASSED", "t.py::test_b PASSED"]),
-                           (cur, ["t.py::test_a FAILED", "t.py::test_b PASSED"])):
+        for out, lines in (
+            (base, ["t.py::test_a PASSED", "t.py::test_b PASSED"]),
+            (cur, ["t.py::test_a FAILED", "t.py::test_b PASSED"]),
+        ):
             p = subprocess.run(
-                [sys.executable, rg, "record", "--output", out,
-                 "--test-cmd", _fake_pytest_cmd(lines)],
-                capture_output=True, timeout=120, check=False)
+                [
+                    sys.executable,
+                    rg,
+                    "record",
+                    "--output",
+                    out,
+                    "--test-cmd",
+                    _fake_pytest_cmd(lines),
+                ],
+                capture_output=True,
+                timeout=120,
+                check=False,
+            )
             assert p.returncode == 0, p.stderr.decode("utf-8", "replace")[:300]
         cmp_p = subprocess.run(
-            [sys.executable, rg, "compare", "--baseline", base, "--current", cur,
-             "--json"],
-            capture_output=True, timeout=120, check=False)
+            [
+                sys.executable,
+                rg,
+                "compare",
+                "--baseline",
+                base,
+                "--current",
+                cur,
+                "--json",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
         result = json.loads(cmp_p.stdout.decode("utf-8"))
         regressed = {r["test"] for r in result["regressions"]}
         assert "t.py::test_a" in regressed, (
-            f"真实回归未被判出（gate_passed={result['gate_passed']}）")
+            f"真实回归未被判出（gate_passed={result['gate_passed']}）"
+        )
         assert result["gate_passed"] is False, "有回归时 gate_passed 必须为 False"
         assert cmp_p.returncode == 1, (
-            f"有回归时 compare 退出码必须为 1，实际 {cmp_p.returncode}")
+            f"有回归时 compare 退出码必须为 1，实际 {cmp_p.returncode}"
+        )
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
 
@@ -160,8 +208,16 @@ EXPECTED_FLAGS = {
     "dep_graph.py": {"--target", "--json", "--output", "--format", "--max-depth"},
     "risk_diagnose.py": {"--target", "--file", "--json", "--risk", "--min-severity"},
     "quality_metrics.py": {"--target", "--file", "--json", "--min-cc", "--quiet"},
-    "regression_guard.py": {"--output", "--test-cmd", "--cwd", "--baseline",
-                            "--current", "--history", "--gamma", "--json"},
+    "regression_guard.py": {
+        "--output",
+        "--test-cmd",
+        "--cwd",
+        "--baseline",
+        "--current",
+        "--history",
+        "--gamma",
+        "--json",
+    },
 }
 
 DOC_SUBCOMMANDS = {"regression_guard.py": ["record", "compare", "evoscore"]}
@@ -176,20 +232,23 @@ def _help_flags(script, subcommand=None):
         args = [sys.executable, os.path.join(SCRIPTS, script), subcommand, "--help"]
     p = subprocess.run(args, capture_output=True, timeout=120, check=False)
     text = p.stdout.decode("utf-8", "replace")
-    return ({tok.split("=")[0] for tok in text.split() if tok.startswith("--")}
-            - {"--help"})
+    return {tok.split("=")[0] for tok in text.split() if tok.startswith("--")} - {
+        "--help"
+    }
 
 
 def _check_cli_surface_matches_docs():
     """文档里的参数面必须等于 argparse 的真实参数面。"""
     import re
+
     for script, expected in EXPECTED_FLAGS.items():
         actual = _help_flags(script)
         for sub in DOC_SUBCOMMANDS.get(script, ()):
             actual |= _help_flags(script, sub) - {"--help"}
         assert actual == expected, (
             f"{script} 参数面漂移：文档口径 {sorted(expected)}，"
-            f"实际 {sorted(actual)}，差集 {sorted(actual ^ expected)}")
+            f"实际 {sorted(actual)}，差集 {sorted(actual ^ expected)}"
+        )
 
     known = {s: set(f) for s, f in EXPECTED_FLAGS.items()}
     for name in DOC_PATHS:
@@ -197,15 +256,17 @@ def _check_cli_surface_matches_docs():
             text = fh.read()
         for ghost in GHOST_SCRIPTS:
             assert ghost not in text, f"{name} 引用了不存在的脚本 {ghost}"
-        assert "Python 3.8" not in text and "3.8+" not in text, \
+        assert "Python 3.8" not in text and "3.8+" not in text, (
             f"{name} 仍声明未被 CI 覆盖的旧 Python 版本"
+        )
         for line in text.split("\n"):
             for script in known:
                 if script not in line:
                     continue
                 for flag in re.findall(r"--[a-z][a-z-]*", line):
                     assert flag in known[script], (
-                        f"{name} 给 {script} 用了它没有的参数 {flag}")
+                        f"{name} 给 {script} 用了它没有的参数 {flag}"
+                    )
 
 
 def test_smoke(tmp_path=None):
@@ -221,6 +282,7 @@ def test_smoke(tmp_path=None):
 
 
 # --- standalone runner -------------------------------------------------
+
 
 def _standalone():
     try:

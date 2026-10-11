@@ -44,14 +44,33 @@ for _stream in (sys.stdout, sys.stderr):
 LANG_EXTENSIONS = {
     ".py": "python",
     ".go": "go",
-    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
     ".rs": "rust",
-    ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
 }
 
 IGNORE_DIRS = {
-    ".git", "node_modules", "vendor", "__pycache__", ".cache",
-    "dist", "build", "target", ".venv", "venv", ".idea", ".vscode", "testdata",
+    ".git",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".venv",
+    "venv",
+    ".idea",
+    ".vscode",
+    "testdata",
 }
 
 RISK_NAMES = {
@@ -67,34 +86,109 @@ SEVERITY_RANK = {"Critical": 3, "Warning": 2, "Suggestion": 1}
 
 # Generic module names that do not match business vocabulary (R6)
 GENERIC_NAMES = {
-    "util", "utils", "helper", "helpers", "common", "misc", "manager",
-    "managers", "service", "services", "handler", "handlers", "stuff",
-    "tools", "toolkit", "core", "miscellaneous", "general",
+    "util",
+    "utils",
+    "helper",
+    "helpers",
+    "common",
+    "misc",
+    "manager",
+    "managers",
+    "service",
+    "services",
+    "handler",
+    "handlers",
+    "stuff",
+    "tools",
+    "toolkit",
+    "core",
+    "miscellaneous",
+    "general",
 }
 
 # Infrastructure markers (R5): domain layer must not import these
 INFRA_MARKERS = (
-    "db", "database", "sql", "redis", "mongo", "kafka", "rabbitmq",
-    "grpc", "protobuf", "proto", "net/http", "http", "infra", "infrastructure",
-    "persistence", "repository", "filesystem", "os", "net", "cloud", "aws",
-    "gcp", "azure", "s3", "elastic", "graphql",
+    "db",
+    "database",
+    "sql",
+    "redis",
+    "mongo",
+    "kafka",
+    "rabbitmq",
+    "grpc",
+    "protobuf",
+    "proto",
+    "net/http",
+    "http",
+    "infra",
+    "infrastructure",
+    "persistence",
+    "repository",
+    "filesystem",
+    "os",
+    "net",
+    "cloud",
+    "aws",
+    "gcp",
+    "azure",
+    "s3",
+    "elastic",
+    "graphql",
 )
 
 # Composition roots are exempt from R5 layer-violation checks (false-positive guard)
 COMPOSITION_ROOT_NAMES = {
-    "main", "app", "index", "bootstrap", "wire", "server", "cmd", "container",
-    "composition_root", "di", "injector", "startup", "run",
+    "main",
+    "app",
+    "index",
+    "bootstrap",
+    "wire",
+    "server",
+    "cmd",
+    "container",
+    "composition_root",
+    "di",
+    "injector",
+    "startup",
+    "run",
 }
 
 # DTO/persistence/payload markers exempt from R6 anemic-model detection
-DTO_MARKERS = ("dto", "request", "response", "record", "schema", "payload",
-               "vo", "bo", "entity", "model", "event", "message", "view")
+DTO_MARKERS = (
+    "dto",
+    "request",
+    "response",
+    "record",
+    "schema",
+    "payload",
+    "vo",
+    "bo",
+    "entity",
+    "model",
+    "event",
+    "message",
+    "view",
+)
 
 # Algorithmic path markers exempt from R4 CC>20 Critical (still flagged Warning)
-ALGO_MARKERS = ("algo", "algorithm", "sort", "search", "parse", "crypto",
-                "math", "codec", "compress", "graph", "astar", "dfa", "nfa")
+ALGO_MARKERS = (
+    "algo",
+    "algorithm",
+    "sort",
+    "search",
+    "parse",
+    "crypto",
+    "math",
+    "codec",
+    "compress",
+    "graph",
+    "astar",
+    "dfa",
+    "nfa",
+)
 
 # ── File discovery & source reading ─────────────────────────────────
+
 
 def discover_files(target):
     """Yield (filepath, lang) for every supported source file under target."""
@@ -139,8 +233,12 @@ FUNC_RE = {
     "c": re.compile(r"^\w[\w\s\*]*\s+(\w+)\s*\([^;]*\)\s*\{", re.MULTILINE),
     "cpp": re.compile(r"^\w[\w\s\*<>:,]*\s+(\w+)\s*\([^;]*\)\s*\{", re.MULTILINE),
     "rust": re.compile(r"^\s*(pub\s+)?(async\s+)?fn\s+(\w+)", re.MULTILINE),
-    "typescript": re.compile(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", re.MULTILINE),
-    "javascript": re.compile(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", re.MULTILINE),
+    "typescript": re.compile(
+        r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", re.MULTILINE
+    ),
+    "javascript": re.compile(
+        r"^\s*(export\s+)?(async\s+)?function\s+(\w+)", re.MULTILINE
+    ),
 }
 
 DECISION_RE = {
@@ -148,15 +246,27 @@ DECISION_RE = {
     "c": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
     "cpp": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
     "rust": re.compile(r"\b(if|else\s+if|for|while|loop|match|=>|&&|\|\|)\b"),
-    "typescript": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
-    "javascript": re.compile(r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"),
+    "typescript": re.compile(
+        r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"
+    ),
+    "javascript": re.compile(
+        r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b"
+    ),
 }
 
 
 def _python_nesting_depth(node):
     """Max depth of nested control-flow blocks within a function AST node."""
-    control = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith,
-               ast.Try, ast.ExceptHandler)
+    control = (
+        ast.If,
+        ast.For,
+        ast.AsyncFor,
+        ast.While,
+        ast.With,
+        ast.AsyncWith,
+        ast.Try,
+        ast.ExceptHandler,
+    )
 
     def walk(n, current):
         best = current
@@ -174,21 +284,29 @@ def _python_cc(node):
     """Cyclomatic complexity for a Python function AST node."""
     cc = 1
     for child in ast.walk(node):
-        if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor,
-                              ast.ExceptHandler)):
+        if isinstance(
+            child, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.ExceptHandler)
+        ):
             cc += 1
         elif isinstance(child, ast.BoolOp):
             cc += len(child.values) - 1
-        elif isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp,
-                                ast.GeneratorExp, ast.Assert)):
+        elif isinstance(
+            child,
+            (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Assert),
+        ):
             cc += 1
     return cc
 
 
 def _python_func_params(args):
     """Count positional/kw/vararg parameters on a Python function."""
-    return (len(args.args) + len(args.kwonlyargs) + len(getattr(args, "posonlyargs", []))
-            + (1 if args.vararg else 0) + (1 if args.kwarg else 0))
+    return (
+        len(args.args)
+        + len(args.kwonlyargs)
+        + len(getattr(args, "posonlyargs", []))
+        + (1 if args.vararg else 0)
+        + (1 if args.kwarg else 0)
+    )
 
 
 def _python_guard_clauses(node):
@@ -197,7 +315,8 @@ def _python_guard_clauses(node):
     for child in node.body:
         is_return = isinstance(child, ast.Return)
         is_guard_if = isinstance(child, ast.If) and any(
-            isinstance(s, ast.Return) for s in child.body)
+            isinstance(s, ast.Return) for s in child.body
+        )
         if is_return or is_guard_if:
             guards += 1
         else:
@@ -214,15 +333,17 @@ def extract_functions_python(source):
         return funcs
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            funcs.append({
-                "name": node.name,
-                "line": node.lineno,
-                "lines": (node.end_lineno or node.lineno) - node.lineno + 1,
-                "params": _python_func_params(node.args),
-                "nesting": _python_nesting_depth(node),
-                "cc": _python_cc(node),
-                "guards": _python_guard_clauses(node),
-            })
+            funcs.append(
+                {
+                    "name": node.name,
+                    "line": node.lineno,
+                    "lines": (node.end_lineno or node.lineno) - node.lineno + 1,
+                    "params": _python_func_params(node.args),
+                    "nesting": _python_nesting_depth(node),
+                    "cc": _python_cc(node),
+                    "guards": _python_guard_clauses(node),
+                }
+            )
     return funcs
 
 
@@ -260,7 +381,7 @@ def _sig_param_count(sig_text):
     start, end = sig_text.find("("), sig_text.rfind(")")
     if start == -1 or end == -1 or end < start:
         return 0
-    params = sig_text[start + 1:end].strip()
+    params = sig_text[start + 1 : end].strip()
     if not params or params == "void":
         return 0
     count, angle = 0, 0
@@ -286,18 +407,20 @@ def extract_functions_c_family(source, lang):
         name = next((g for g in match.groups() if g), None)
         if not name:
             continue
-        start_idx = source[:match.start()].count("\n")
+        start_idx = source[: match.start()].count("\n")
         end_idx = _brace_body_extent(lines, start_idx)
-        body = "\n".join(lines[start_idx:end_idx + 1])
-        funcs.append({
-            "name": name,
-            "line": start_idx + 1,
-            "lines": end_idx - start_idx + 1,
-            "params": _sig_param_count(match.group(0)),
-            "nesting": max(0, _brace_nesting(lines[start_idx:end_idx + 1]) - 1),
-            "cc": 1 + len(decision_re.findall(body)),
-            "guards": body.count("return") + body.count("throw"),
-        })
+        body = "\n".join(lines[start_idx : end_idx + 1])
+        funcs.append(
+            {
+                "name": name,
+                "line": start_idx + 1,
+                "lines": end_idx - start_idx + 1,
+                "params": _sig_param_count(match.group(0)),
+                "nesting": max(0, _brace_nesting(lines[start_idx : end_idx + 1]) - 1),
+                "cc": 1 + len(decision_re.findall(body)),
+                "guards": body.count("return") + body.count("throw"),
+            }
+        )
     return funcs
 
 
@@ -311,12 +434,47 @@ def extract_functions(source, lang):
 # ── Import extraction (R2/R5 input) ─────────────────────────────────
 
 PY_STDLIB_TOP = {
-    "os", "sys", "re", "json", "math", "pathlib", "collections", "itertools",
-    "functools", "typing", "argparse", "ast", "io", "time", "datetime",
-    "logging", "unittest", "asyncio", "threading", "multiprocessing",
-    "subprocess", "shutil", "glob", "hashlib", "base64", "random", "decimal",
-    "dataclasses", "enum", "abc", "copy", "csv", "sqlite3", "socket",
-    "urllib", "http", "xml", "html", "email", "contextlib", "inspect",
+    "os",
+    "sys",
+    "re",
+    "json",
+    "math",
+    "pathlib",
+    "collections",
+    "itertools",
+    "functools",
+    "typing",
+    "argparse",
+    "ast",
+    "io",
+    "time",
+    "datetime",
+    "logging",
+    "unittest",
+    "asyncio",
+    "threading",
+    "multiprocessing",
+    "subprocess",
+    "shutil",
+    "glob",
+    "hashlib",
+    "base64",
+    "random",
+    "decimal",
+    "dataclasses",
+    "enum",
+    "abc",
+    "copy",
+    "csv",
+    "sqlite3",
+    "socket",
+    "urllib",
+    "http",
+    "xml",
+    "html",
+    "email",
+    "contextlib",
+    "inspect",
 }
 
 
@@ -357,11 +515,14 @@ def _regex_imports(source, pattern, group=1):
     return [m for m in pattern.findall(source) if m]
 
 
-GO_IMPORT_RE = re.compile(r"import\s*(?:\(([^)]*)\)|"  # block form
-                          r'"([^"]+)")', re.MULTILINE)
+GO_IMPORT_RE = re.compile(
+    r"import\s*(?:\(([^)]*)\)|"  # block form
+    r'"([^"]+)")',
+    re.MULTILINE,
+)
 GO_QUOTED_RE = re.compile(r'"([^"]+)"')
 C_INCLUDE_RE = re.compile(r'#\s*include\s*[<"]([^>"]+)[>"]')
-RUST_USE_RE = re.compile(r'^\s*use\s+([\w:]+)', re.MULTILINE)
+RUST_USE_RE = re.compile(r"^\s*use\s+([\w:]+)", re.MULTILINE)
 TS_IMPORT_RE = re.compile(r"""import\s+[^;]*?from\s+['"]([^'"]+)['"]""")
 TS_REQUIRE_RE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
 
@@ -413,9 +574,24 @@ def extract_imports(source, lang):
 
 LAYER_PATTERNS = [
     (re.compile(r"(^|/)(domain|entities|entity|model|aggregate)(/|$)"), 3),  # innermost
-    (re.compile(r"(^|/)(usecase|use_case|application|app/service|services|command)(/|$)"), 2),
-    (re.compile(r"(^|/)(api|controller|controllers|handler|handlers|presentation|ui|web|router)(/|$)"), 1),
-    (re.compile(r"(^|/)(infra|infrastructure|persistence|repository|repositories|db|database|adapter|adapters|external|client)(/|$)"), 0),
+    (
+        re.compile(
+            r"(^|/)(usecase|use_case|application|app/service|services|command)(/|$)"
+        ),
+        2,
+    ),
+    (
+        re.compile(
+            r"(^|/)(api|controller|controllers|handler|handlers|presentation|ui|web|router)(/|$)"
+        ),
+        1,
+    ),
+    (
+        re.compile(
+            r"(^|/)(infra|infrastructure|persistence|repository|repositories|db|database|adapter|adapters|external|client)(/|$)"
+        ),
+        0,
+    ),
 ]
 
 
@@ -449,6 +625,7 @@ def imports_infra(modules):
 
 # ── R1 Cognitive Overload ───────────────────────────────────────────
 
+
 def detect_r1(filepath, lang, source, rel):
     """R1 认知过载: function length, nesting, params, CC."""
     findings = []
@@ -472,22 +649,32 @@ def detect_r1(filepath, lang, source, rel):
             continue
 
         # False positive guard: linear + guard clauses + clear naming
-        if (fn["lines"] > 50 and fn["nesting"] <= 2 and fn["cc"] <= 10
-                and fn["guards"] >= 2 and len(fn["name"]) >= 4):
+        if (
+            fn["lines"] > 50
+            and fn["nesting"] <= 2
+            and fn["cc"] <= 10
+            and fn["guards"] >= 2
+            and len(fn["name"]) >= 4
+        ):
             sev = "Suggestion"
             issue += " [疑似假阳性: 线性+卫语句]"
 
-        findings.append(_finding(
-            "R1", sev, f"{rel}:{fn['name']}:{fn['line']}",
-            symptom=f"{issue}，理解成本高",
-            source="缺少中间抽象，条件/分支逻辑内联于单一函数",
-            consequence="新成员理解耗时长，修改易引入缺陷，测试覆盖困难",
-            remedy="提取卫语句前置、按职责拆分子函数、用策略/多态消除分支",
-        ))
+        findings.append(
+            _finding(
+                "R1",
+                sev,
+                f"{rel}:{fn['name']}:{fn['line']}",
+                symptom=f"{issue}，理解成本高",
+                source="缺少中间抽象，条件/分支逻辑内联于单一函数",
+                consequence="新成员理解耗时长，修改易引入缺陷，测试覆盖困难",
+                remedy="提取卫语句前置、按职责拆分子函数、用策略/多态消除分支",
+            )
+        )
     return findings
 
 
 # ── R2 Change Propagation ───────────────────────────────────────────
+
 
 def detect_r2(filepath, lang, source, rel):
     """R2 变更传播: module fan-out via import count."""
@@ -498,8 +685,11 @@ def detect_r2(filepath, lang, source, rel):
     # exclude stdlib + the module's own top-level package.
     if lang == "python":
         distinct = {_normalize_module(m) for m in mods}
-        distinct = {m for m in distinct if m and m not in PY_STDLIB_TOP
-                    and m != _normalize_module(Path(rel).stem)}
+        distinct = {
+            m
+            for m in distinct
+            if m and m not in PY_STDLIB_TOP and m != _normalize_module(Path(rel).stem)
+        }
     else:
         distinct = {m for m in set(mods) if m}
     fan_out = len(distinct)
@@ -511,13 +701,17 @@ def detect_r2(filepath, lang, source, rel):
     else:
         return findings
 
-    findings.append(_finding(
-        "R2", sev, f"{rel}:module:{1}",
-        symptom=f"模块扇出 fan-out={fan_out} ({'Critical' if fan_out > 7 else 'Warning'})",
-        source="模块承担过多职责，直接依赖大量外部模块",
-        consequence="任一依赖变动均需触碰本模块，变更波及面广，回归风险高",
-        remedy="按业务能力拆分模块，通过接口/事件解耦，收敛对外依赖面",
-    ))
+    findings.append(
+        _finding(
+            "R2",
+            sev,
+            f"{rel}:module:{1}",
+            symptom=f"模块扇出 fan-out={fan_out} ({'Critical' if fan_out > 7 else 'Warning'})",
+            source="模块承担过多职责，直接依赖大量外部模块",
+            consequence="任一依赖变动均需触碰本模块，变更波及面广，回归风险高",
+            remedy="按业务能力拆分模块，通过接口/事件解耦，收敛对外依赖面",
+        )
+    )
     return findings
 
 
@@ -530,24 +724,24 @@ MAGIC_NUM_RE = re.compile(r"\b(?<![\w.])(\d{2,})(?!\w)")
 def _strip_strings_comments(source, lang):
     """Roughly strip string literals and comments to reduce false positives."""
     if lang == "python":
-        source = re.sub(r'#.*', '', source)
-        source = re.sub(r'"""[\s\S]*?"""', '', source)
-        source = re.sub(r"'''[\s\S]*?'''", '', source)
+        source = re.sub(r"#.*", "", source)
+        source = re.sub(r'"""[\s\S]*?"""', "", source)
+        source = re.sub(r"'''[\s\S]*?'''", "", source)
         source = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', '""', source)
         source = re.sub(r"'[^'\\]*(?:\\.[^'\\]*)*'", "''", source)
     else:
-        source = re.sub(r'//.*', '', source)
-        source = re.compile(r'/\*[\s\S]*?\*/').sub('', source)
+        source = re.sub(r"//.*", "", source)
+        source = re.compile(r"/\*[\s\S]*?\*/").sub("", source)
         source = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', '""', source)
         source = re.sub(r"'[^'\\]*(?:\\.[^'\\]*)*'", "''", source)
-        source = re.sub(r'`[^`]*`', '``', source)
+        source = re.sub(r"`[^`]*`", "``", source)
     return source
 
 
 def _func_tokens(source, lang, fn):
     """Token slice for a function body (approximate, by line range)."""
     lines = source.split("\n")
-    body = "\n".join(lines[fn["line"] - 1: fn["line"] - 1 + fn["lines"]])
+    body = "\n".join(lines[fn["line"] - 1 : fn["line"] - 1 + fn["lines"]])
     return TOKEN_RE.findall(_strip_strings_comments(body, lang))
 
 
@@ -572,7 +766,9 @@ def detect_r3(files_data):
             toks = _func_tokens(source, lang, fn)
             if len(toks) < NGRAM:
                 continue
-            grams = {hash(tuple(toks[i:i + NGRAM])) for i in range(len(toks) - NGRAM + 1)}
+            grams = {
+                hash(tuple(toks[i : i + NGRAM])) for i in range(len(toks) - NGRAM + 1)
+            }
             for g in grams:
                 inverted[g].add(fid)
             func_records.append((fid, rel, fn, grams))
@@ -590,9 +786,11 @@ def detect_r3(files_data):
             if (fid_a, fid_b) in seen_pairs:
                 continue
             seen_pairs.add((fid_a, fid_b))
-            rel_b, fn_b, grams_b = (func_records[fid_b][1],
-                                    func_records[fid_b][2],
-                                    func_records[fid_b][3])
+            rel_b, fn_b, grams_b = (
+                func_records[fid_b][1],
+                func_records[fid_b][2],
+                func_records[fid_b][3],
+            )
             union = len(grams_a | grams_b) or 1
             jac = inter / union
             if jac >= 0.6:
@@ -601,13 +799,17 @@ def detect_r3(files_data):
                 if ctx_a and ctx_b and ctx_a != ctx_b:
                     continue
                 sev = "Critical" if jac >= 0.8 else "Warning"
-                findings.append(_finding(
-                    "R3", sev, f"{rel_a}:{fn_a['name']}:{fn_a['line']}",
-                    symptom=f"与 {rel_b}:{fn_b['name']} 代码块高度相似 (Jaccard={jac:.2f})",
-                    source="同一决策/算法在多处复制粘贴，未提取共享抽象",
-                    consequence="修改业务规则需同步多处，易遗漏导致行为不一致",
-                    remedy="提取公共函数/基类/策略对象，单一事实来源表达该决策",
-                ))
+                findings.append(
+                    _finding(
+                        "R3",
+                        sev,
+                        f"{rel_a}:{fn_a['name']}:{fn_a['line']}",
+                        symptom=f"与 {rel_b}:{fn_b['name']} 代码块高度相似 (Jaccard={jac:.2f})",
+                        source="同一决策/算法在多处复制粘贴，未提取共享抽象",
+                        consequence="修改业务规则需同步多处，易遗漏导致行为不一致",
+                        remedy="提取公共函数/基类/策略对象，单一事实来源表达该决策",
+                    )
+                )
 
     # --- magic numbers appearing 3+ times across files ---
     num_locations = defaultdict(list)  # value -> [(rel, line)]
@@ -620,17 +822,22 @@ def detect_r3(files_data):
         files_hit = {rel for rel, _ in locs}
         if len(locs) >= 3 and len(files_hit) >= 2:
             sample = locs[0]
-            findings.append(_finding(
-                "R3", "Critical", f"{sample[0]}:magic:{value}:{sample[1]}",
-                symptom=f"魔法数字 {value} 重复出现 {len(locs)} 次跨 {len(files_hit)} 文件",
-                source="业务常量未命名并集中定义，散落字面量",
-                consequence="阈值/配置调整需逐处搜索修改，易遗漏且语义不明",
-                remedy="提取为命名常量/配置项，单一来源引用",
-            ))
+            findings.append(
+                _finding(
+                    "R3",
+                    "Critical",
+                    f"{sample[0]}:magic:{value}:{sample[1]}",
+                    symptom=f"魔法数字 {value} 重复出现 {len(locs)} 次跨 {len(files_hit)} 文件",
+                    source="业务常量未命名并集中定义，散落字面量",
+                    consequence="阈值/配置调整需逐处搜索修改，易遗漏且语义不明",
+                    remedy="提取为命名常量/配置项，单一来源引用",
+                )
+            )
     return findings
 
 
 # ── R4 Accidental Complexity ────────────────────────────────────────
+
 
 def detect_r4(filepath, lang, source, rel):
     """R4 偶发复杂性: single-impl interfaces, high-CC non-algo code, 1-variant factories."""
@@ -642,13 +849,17 @@ def detect_r4(filepath, lang, source, rel):
     for fn in funcs:
         if fn["cc"] > 20:
             sev = "Warning" if is_algo else "Critical"
-            findings.append(_finding(
-                "R4", sev, f"{rel}:{fn['name']}:{fn['line']}",
-                symptom=f"圈复杂度 CC={fn['cc']} (>20)，{'算法场景' if is_algo else '非算法场景'}",
-                source="分支逻辑过度膨胀，可能引入了问题本身不需要的复杂度",
-                consequence="维护成本畸高，测试路径组合爆炸，缺陷易潜伏",
-                remedy="评估是否可用查表/多态/管道拆解，剥离偶发复杂性",
-            ))
+            findings.append(
+                _finding(
+                    "R4",
+                    sev,
+                    f"{rel}:{fn['name']}:{fn['line']}",
+                    symptom=f"圈复杂度 CC={fn['cc']} (>20)，{'算法场景' if is_algo else '非算法场景'}",
+                    source="分支逻辑过度膨胀，可能引入了问题本身不需要的复杂度",
+                    consequence="维护成本畸高，测试路径组合爆炸，缺陷易潜伏",
+                    remedy="评估是否可用查表/多态/管道拆解，剥离偶发复杂性",
+                )
+            )
 
     # Single-implementation interfaces / 1-variant factories (Python + TS/JS)
     if lang == "python":
@@ -671,34 +882,46 @@ def _r4_python(source, rel):
         if isinstance(node, ast.ClassDef):
             for base in node.bases:
                 name = _ast_name(base)
-                if name and ("ABC" in name or "Protocol" in name
-                             or name.startswith("Abstract")):
+                if name and (
+                    "ABC" in name or "Protocol" in name or name.startswith("Abstract")
+                ):
                     abstract_bases.add(node.name)
                 if name:
                     bases_to_subs[name].append(node.name)
     for iface in abstract_bases:
         subs = [s for s in bases_to_subs.get(iface, []) if s != iface]
         if len(subs) == 1:
-            findings.append(_finding(
-                "R4", "Warning", f"{rel}:{iface}:0",
-                symptom=f"抽象类/接口 {iface} 仅有 1 个实现 ({subs[0]})",
-                source="为单一变体引入接口/抽象，过度设计",
-                consequence="增加间接层而无扩展收益，阅读与跳转成本上升",
-                remedy="移除接口直到第二变体出现(YAGNI)，或合并接口与实现",
-            ))
+            findings.append(
+                _finding(
+                    "R4",
+                    "Warning",
+                    f"{rel}:{iface}:0",
+                    symptom=f"抽象类/接口 {iface} 仅有 1 个实现 ({subs[0]})",
+                    source="为单一变体引入接口/抽象，过度设计",
+                    consequence="增加间接层而无扩展收益，阅读与跳转成本上升",
+                    remedy="移除接口直到第二变体出现(YAGNI)，或合并接口与实现",
+                )
+            )
     # Factory classes with single variant
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and "Factory" in node.name:
-            methods = [m for m in node.body
-                       if isinstance(m, ast.FunctionDef) and not m.name.startswith("_")]
+            methods = [
+                m
+                for m in node.body
+                if isinstance(m, ast.FunctionDef) and not m.name.startswith("_")
+            ]
             if len(methods) <= 1:
-                findings.append(_finding(
-                    "R4", "Warning", f"{rel}:{node.name}:{node.lineno}",
-                    symptom=f"工厂类 {node.name} 仅产出单一变体",
-                    source="引入工厂模式但当前仅有一种产品变体",
-                    consequence="抽象与间接层无对应扩展价值",
-                    remedy="直接构造对象，待多变体出现再引入工厂",
-                ))
+                findings.append(
+                    _finding(
+                        "R4",
+                        "Warning",
+                        f"{rel}:{node.name}:{node.lineno}",
+                        symptom=f"工厂类 {node.name} 仅产出单一变体",
+                        source="引入工厂模式但当前仅有一种产品变体",
+                        consequence="抽象与间接层无对应扩展价值",
+                        remedy="直接构造对象，待多变体出现再引入工厂",
+                    )
+                )
     return findings
 
 
@@ -714,17 +937,22 @@ def _r4_ts_js(source, rel):
     for iface in interfaces:
         impls = impl_map.get(iface, [])
         if len(impls) == 1:
-            findings.append(_finding(
-                "R4", "Warning", f"{rel}:{iface}:0",
-                symptom=f"接口 {iface} 仅有 1 个实现 ({impls[0]})",
-                source="为单一变体引入接口，过度设计",
-                consequence="增加间接层而无扩展收益",
-                remedy="移除接口直到第二变体出现(YAGNI)",
-            ))
+            findings.append(
+                _finding(
+                    "R4",
+                    "Warning",
+                    f"{rel}:{iface}:0",
+                    symptom=f"接口 {iface} 仅有 1 个实现 ({impls[0]})",
+                    source="为单一变体引入接口，过度设计",
+                    consequence="增加间接层而无扩展收益",
+                    remedy="移除接口直到第二变体出现(YAGNI)",
+                )
+            )
     return findings
 
 
 # ── R5 Dependency Disorder ──────────────────────────────────────────
+
 
 def _ast_name(node):
     """Extract a dotted name from an AST base/attribute node."""
@@ -791,13 +1019,17 @@ def detect_r5(import_edges, rel_files):
 
     for cyc in dfs_cycles():
         chain = " -> ".join(cyc)
-        findings.append(_finding(
-            "R5", "Critical", f"{cyc[0]}:cycle:{cyc[1] if len(cyc) > 1 else '?'}:0",
-            symptom=f"循环依赖: {chain}",
-            source="模块间双向耦合，未通过接口反转或共享下沉解耦",
-            consequence="无法独立编译/测试/复用任一节点，变更沿环传播",
-            remedy="提取共享模块到下层，或通过接口/事件反转其中一条边",
-        ))
+        findings.append(
+            _finding(
+                "R5",
+                "Critical",
+                f"{cyc[0]}:cycle:{cyc[1] if len(cyc) > 1 else '?'}:0",
+                symptom=f"循环依赖: {chain}",
+                source="模块间双向耦合，未通过接口反转或共享下沉解耦",
+                consequence="无法独立编译/测试/复用任一节点，变更沿环传播",
+                remedy="提取共享模块到下层，或通过接口/事件反转其中一条边",
+            )
+        )
 
     # --- domain -> infrastructure & layer-direction violations ---
     for src, dst in import_edges:
@@ -810,27 +1042,41 @@ def detect_r5(import_edges, rel_files):
         dst_rank = layer_rank(dst)
         # domain layer importing infrastructure
         if is_domain_layer(src) and imports_infra([dst]):
-            findings.append(_finding(
-                "R5", "Critical", f"{src}:import:{dst}:0",
-                symptom=f"领域层 {src} 直接依赖基础设施 {dst}",
-                source="领域层导入数据库/HTTP/文件系统等具体实现，违反依赖倒置",
-                consequence="领域逻辑与基础设施耦合，无法脱离框架测试，迁移代价高",
-                remedy="在领域层定义端口接口，基础设施实现接口并在组合根注入",
-            ))
+            findings.append(
+                _finding(
+                    "R5",
+                    "Critical",
+                    f"{src}:import:{dst}:0",
+                    symptom=f"领域层 {src} 直接依赖基础设施 {dst}",
+                    source="领域层导入数据库/HTTP/文件系统等具体实现，违反依赖倒置",
+                    consequence="领域逻辑与基础设施耦合，无法脱离框架测试，迁移代价高",
+                    remedy="在领域层定义端口接口，基础设施实现接口并在组合根注入",
+                )
+            )
             continue
         # layer direction violation (inner depending on outer)
-        if src_rank is not None and dst_rank is not None and dst_rank < src_rank and src_rank >= 2:
-            findings.append(_finding(
-                "R5", "Critical", f"{src}:import:{dst}:0",
-                symptom=f"层间反向依赖: {src}(rank={src_rank}) -> {dst}(rank={dst_rank})",
-                source="内层依赖了更外层模块，依赖方向未朝领域中心收敛",
-                consequence="内层被外层变化绑架，分层失效，回归面扩大",
-                remedy="反转依赖：外层依赖内层接口，或通过事件/端口解耦",
-            ))
+        if (
+            src_rank is not None
+            and dst_rank is not None
+            and dst_rank < src_rank
+            and src_rank >= 2
+        ):
+            findings.append(
+                _finding(
+                    "R5",
+                    "Critical",
+                    f"{src}:import:{dst}:0",
+                    symptom=f"层间反向依赖: {src}(rank={src_rank}) -> {dst}(rank={dst_rank})",
+                    source="内层依赖了更外层模块，依赖方向未朝领域中心收敛",
+                    consequence="内层被外层变化绑架，分层失效，回归面扩大",
+                    remedy="反转依赖：外层依赖内层接口，或通过事件/端口解耦",
+                )
+            )
     return findings
 
 
 # ── R6 Domain Model Distortion ──────────────────────────────────────
+
 
 def detect_r6(filepath, lang, source, rel):
     """R6 领域模型扭曲: anemic models, naming mismatch, cross-context leakage."""
@@ -839,13 +1085,17 @@ def detect_r6(filepath, lang, source, rel):
     # module name not matching business vocabulary
     for part in parts[:-1]:
         if part in GENERIC_NAMES:
-            findings.append(_finding(
-                "R6", "Warning", f"{rel}:module:{part}:0",
-                symptom=f"模块名 '{part}' 属通用技术词汇，非业务概念",
-                source="未采用统一语言(Ubiquitous Language)命名模块",
-                consequence="业务语义被技术术语掩盖，沟通与代码映射困难",
-                remedy="按业务领域命名模块(如 order/billing/shipment)",
-            ))
+            findings.append(
+                _finding(
+                    "R6",
+                    "Warning",
+                    f"{rel}:module:{part}:0",
+                    symptom=f"模块名 '{part}' 属通用技术词汇，非业务概念",
+                    source="未采用统一语言(Ubiquitous Language)命名模块",
+                    consequence="业务语义被技术术语掩盖，沟通与代码映射困难",
+                    remedy="按业务领域命名模块(如 order/billing/shipment)",
+                )
+            )
             break
 
     # cross-context logic leakage (heuristic keyword scan)
@@ -866,13 +1116,17 @@ def detect_r6(filepath, lang, source, rel):
                     leaked.append((ctx, kw))
                     break
         for ctx, kw in leaked[:3]:
-            findings.append(_finding(
-                "R6", "Warning", f"{rel}:leak:{kw}:0",
-                symptom=f"{current_ctx} 模块内出现 {ctx} 上下文概念 ({kw})",
-                source="限界上下文边界泄漏，跨域逻辑未通过翻译/防腐层",
-                consequence="上下文耦合，职责模糊，模型表达失真",
-                remedy="通过防腐层/领域事件解耦，将逻辑归还对应上下文",
-            ))
+            findings.append(
+                _finding(
+                    "R6",
+                    "Warning",
+                    f"{rel}:leak:{kw}:0",
+                    symptom=f"{current_ctx} 模块内出现 {ctx} 上下文概念 ({kw})",
+                    source="限界上下文边界泄漏，跨域逻辑未通过翻译/防腐层",
+                    consequence="上下文耦合，职责模糊，模型表达失真",
+                    remedy="通过防腐层/领域事件解耦，将逻辑归还对应上下文",
+                )
+            )
 
     # anemic domain models (Python only — needs AST)
     if lang == "python":
@@ -886,41 +1140,89 @@ def _r6_python_anemic(source, rel):
         tree = ast.parse(source)
     except (SyntaxError, Exception):
         return findings
-    in_dto_dir = any(m in rel.lower() for m in ("/dto", "/model", "/api", "/proto",
-                                                 "/schema", "/request", "/response"))
+    in_dto_dir = any(
+        m in rel.lower()
+        for m in (
+            "/dto",
+            "/model",
+            "/api",
+            "/proto",
+            "/schema",
+            "/request",
+            "/response",
+        )
+    )
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
         name = node.name
         # false positive: DTO/persistence/API payloads
-        if name.endswith(("DTO", "Dto", "Request", "Response", "Record", "Schema",
-                          "Payload", "Event", "Message")) or in_dto_dir:
+        if (
+            name.endswith(
+                (
+                    "DTO",
+                    "Dto",
+                    "Request",
+                    "Response",
+                    "Record",
+                    "Schema",
+                    "Payload",
+                    "Event",
+                    "Message",
+                )
+            )
+            or in_dto_dir
+        ):
             continue
         # only inspect classes that look like domain objects (CapWords, not *Service/*Controller)
-        if name.endswith(("Service", "Controller", "Handler", "Manager", "Factory",
-                          "Repository", "Provider", "Builder", "Validator")):
+        if name.endswith(
+            (
+                "Service",
+                "Controller",
+                "Handler",
+                "Manager",
+                "Factory",
+                "Repository",
+                "Provider",
+                "Builder",
+                "Validator",
+            )
+        ):
             continue
         methods = [m for m in node.body if isinstance(m, ast.FunctionDef)]
-        behavioral = [m for m in methods
-                      if not m.name.startswith("_")
-                      and not isinstance(next(iter(m.decorator_list), None), property)
-                      and m.name not in ("get", "set", "is", "has")]
+        behavioral = [
+            m
+            for m in methods
+            if not m.name.startswith("_")
+            and not isinstance(next(iter(m.decorator_list), None), property)
+            and m.name not in ("get", "set", "is", "has")
+        ]
         # property getters/setters only
-        prop_methods = [m for m in methods
-                        if any(isinstance(d, property) or _ast_name(d) == "property"
-                               for d in m.decorator_list)]
+        prop_methods = [
+            m
+            for m in methods
+            if any(
+                isinstance(d, property) or _ast_name(d) == "property"
+                for d in m.decorator_list
+            )
+        ]
         if methods and not behavioral and len(prop_methods) >= 1:
-            findings.append(_finding(
-                "R6", "Critical", f"{rel}:{name}:{node.lineno}",
-                symptom=f"领域对象 {name} 仅含 getter/setter，无行为方法",
-                source="业务逻辑外溢到 Service 层，领域对象退化为数据袋",
-                consequence="领域规则分散且不可复用，不变量无法被对象自身保护",
-                remedy="将相关业务行为迁回领域对象，让对象封装自身不变量",
-            ))
+            findings.append(
+                _finding(
+                    "R6",
+                    "Critical",
+                    f"{rel}:{name}:{node.lineno}",
+                    symptom=f"领域对象 {name} 仅含 getter/setter，无行为方法",
+                    source="业务逻辑外溢到 Service 层，领域对象退化为数据袋",
+                    consequence="领域规则分散且不可复用，不变量无法被对象自身保护",
+                    remedy="将相关业务行为迁回领域对象，让对象封装自身不变量",
+                )
+            )
     return findings
 
 
 # ── Finding assembly & aggregation ──────────────────────────────────
+
 
 def _finding(risk, severity, location, symptom, source, consequence, remedy):
     """Build a four-part finding dict."""
@@ -950,7 +1252,13 @@ def compute_health_impact(findings):
         grade = "需关注"
     else:
         grade = "危险"
-    return {"score": score, "grade": grade, "critical": c, "warning": w, "suggestion": s}
+    return {
+        "score": score,
+        "grade": grade,
+        "critical": c,
+        "warning": w,
+        "suggestion": s,
+    }
 
 
 def diagnose(target, risks, min_severity):
@@ -1000,7 +1308,9 @@ def diagnose(target, risks, min_severity):
     all_findings = [f for f in all_findings if SEVERITY_RANK[f["severity"]] >= min_rank]
 
     # Sort: by risk, then severity desc
-    all_findings.sort(key=lambda f: (f["risk"], -SEVERITY_RANK[f["severity"]], f["location"]))
+    all_findings.sort(
+        key=lambda f: (f["risk"], -SEVERITY_RANK[f["severity"]], f["location"])
+    )
 
     health = compute_health_impact(all_findings)
     grouped = defaultdict(list)
@@ -1019,6 +1329,7 @@ def diagnose(target, risks, min_severity):
 
 
 # ── Output formatting ───────────────────────────────────────────────
+
 
 def _severity_marker(sev):
     return {"Critical": "[!]", "Warning": "[~]", "Suggestion": "[i]"}.get(sev, "[?]")
@@ -1052,7 +1363,9 @@ def render_human(report):
         print(f"  {risk} {RISK_NAMES[risk]}  ({len(items)} findings)")
         print(f"  {dash}")
         for f in items:
-            print(f"\n  {_severity_marker(f['severity'])} [{f['severity']}] {f['location']}")
+            print(
+                f"\n  {_severity_marker(f['severity'])} [{f['severity']}] {f['location']}"
+            )
             print(f"      Symptom:     {f['symptom']}")
             print(f"      Source:      {f['source']}")
             print(f"      Consequence: {f['consequence']}")
@@ -1061,6 +1374,7 @@ def render_human(report):
 
 
 # ── CLI ─────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1077,11 +1391,18 @@ Examples:
     parser.add_argument("--file", help="Analyze a single file")
     parser.add_argument("--target", help="Analyze a directory")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--risk", action="append",
-                        choices=["R1", "R2", "R3", "R4", "R5", "R6"],
-                        help="Scan only specific risk(s); repeatable")
-    parser.add_argument("--min-severity", choices=["Critical", "Warning", "Suggestion"],
-                        default="Suggestion", help="Minimum severity to report")
+    parser.add_argument(
+        "--risk",
+        action="append",
+        choices=["R1", "R2", "R3", "R4", "R5", "R6"],
+        help="Scan only specific risk(s); repeatable",
+    )
+    parser.add_argument(
+        "--min-severity",
+        choices=["Critical", "Warning", "Suggestion"],
+        default="Suggestion",
+        help="Minimum severity to report",
+    )
     args = parser.parse_args()
 
     if not args.file and not args.target:

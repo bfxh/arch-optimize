@@ -30,13 +30,16 @@ for _stream in (sys.stdout, sys.stderr):
 
 # ── Test command auto-detection ─────────────────────────────────────
 
+
 def detect_test_cmd(cwd: str = ".") -> str:
     """Auto-detect test command based on project files present."""
     # Go
     if os.path.exists(os.path.join(cwd, "go.mod")):
         return "go test ./... -v -json"
     # Python / pytest
-    if os.path.exists(os.path.join(cwd, "pytest.ini")) or os.path.exists(os.path.join(cwd, "setup.cfg")):
+    if os.path.exists(os.path.join(cwd, "pytest.ini")) or os.path.exists(
+        os.path.join(cwd, "setup.cfg")
+    ):
         return "python -m pytest --tb=short -v"
     pyproject = os.path.join(cwd, "pyproject.toml")
     if os.path.exists(pyproject):
@@ -66,6 +69,7 @@ def detect_test_cmd(cwd: str = ".") -> str:
 
 
 # ── Test output parsers ─────────────────────────────────────────────
+
 
 def parse_go_test_json(output: str) -> dict:
     """Parse `go test -json` output. Each line is a JSON object."""
@@ -101,7 +105,12 @@ def parse_pytest_verbose(output: str) -> dict:
             continue
         test_name = m.group(1).strip()
         status_raw = m.group(2)
-        status_map = {"PASSED": "pass", "FAILED": "fail", "ERROR": "fail", "SKIPPED": "skip"}
+        status_map = {
+            "PASSED": "pass",
+            "FAILED": "fail",
+            "ERROR": "fail",
+            "SKIPPED": "skip",
+        }
         status = status_map.get(status_raw, "skip")
         if status == "skip":
             continue
@@ -187,6 +196,7 @@ def parse_test_output(output: str, test_cmd: str) -> dict:
 
 # ── record subcommand ───────────────────────────────────────────────
 
+
 def run_tests(test_cmd: str, cwd: str = ".") -> dict:
     """Run test command and return parsed results."""
     try:
@@ -246,11 +256,14 @@ def cmd_record(args) -> int:
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
 
-    print(f"Recorded {data['total']} tests ({data['passed']} passed, {data['failed']} failed) to {args.output}")
+    print(
+        f"Recorded {data['total']} tests ({data['passed']} passed, {data['failed']} failed) to {args.output}"
+    )
     return 0
 
 
 # ── compare subcommand ─────────────────────────────────────────────
+
 
 def compare_results(baseline: dict, current: dict) -> dict:
     """Compare baseline and current test results."""
@@ -279,12 +292,14 @@ def compare_results(baseline: dict, current: dict) -> dict:
             if b_dur > 0 and c_dur > 0:
                 increase = (c_dur - b_dur) / b_dur
                 if increase > 0.10:
-                    perf_regressions.append({
-                        "test": name,
-                        "was_ms": b_dur,
-                        "now_ms": c_dur,
-                        "increase_pct": round(increase * 100, 1),
-                    })
+                    perf_regressions.append(
+                        {
+                            "test": name,
+                            "was_ms": b_dur,
+                            "now_ms": c_dur,
+                            "increase_pct": round(increase * 100, 1),
+                        }
+                    )
         elif c and not b:
             new_tests.append(name)
         elif b and not c:
@@ -293,11 +308,19 @@ def compare_results(baseline: dict, current: dict) -> dict:
     # Zero-regression rate
     total_tasks = len(all_names)
     regression_count = len(regressions)
-    zero_reg_rate = ((total_tasks - regression_count) / total_tasks * 100) if total_tasks > 0 else 100.0
+    zero_reg_rate = (
+        ((total_tasks - regression_count) / total_tasks * 100)
+        if total_tasks > 0
+        else 100.0
+    )
 
     # Non-asymmetric scoring
-    baseline_pass = baseline.get("passed", sum(1 for r in base_tests.values() if r["status"] == "pass"))
-    new_pass = current.get("passed", sum(1 for r in curr_tests.values() if r["status"] == "pass"))
+    baseline_pass = baseline.get(
+        "passed", sum(1 for r in base_tests.values() if r["status"] == "pass")
+    )
+    new_pass = current.get(
+        "passed", sum(1 for r in curr_tests.values() if r["status"] == "pass")
+    )
     target_pass = baseline_pass + max(1, len(new_tests))
 
     if new_pass >= baseline_pass and target_pass > baseline_pass:
@@ -327,19 +350,23 @@ def compare_results(baseline: dict, current: dict) -> dict:
     # Findings with severity
     findings = []
     for r in regressions:
-        findings.append({
-            "severity": "Critical",
-            "issue": "REGRESSION",
-            "test": r["test"],
-            "detail": f"{r['was']} -> {r['now']}",
-        })
+        findings.append(
+            {
+                "severity": "Critical",
+                "issue": "REGRESSION",
+                "test": r["test"],
+                "detail": f"{r['was']} -> {r['now']}",
+            }
+        )
     for p in perf_regressions:
-        findings.append({
-            "severity": "Warning",
-            "issue": "PERFORMANCE_REGRESSION",
-            "test": p["test"],
-            "detail": f"{p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)",
-        })
+        findings.append(
+            {
+                "severity": "Warning",
+                "issue": "PERFORMANCE_REGRESSION",
+                "test": p["test"],
+                "detail": f"{p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)",
+            }
+        )
 
     return {
         "baseline": {
@@ -395,15 +422,15 @@ def print_human_compare(result: dict):
     """Print human-readable comparison report."""
     b = result["baseline"]
     c = result["current"]
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  arch-optimize Regression Guard - Comparison Report")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  {'Metric':<30s} {'Baseline':>12s} {'Current':>12s}")
-    print(f"  {'-'*56}")
+    print(f"  {'-' * 56}")
     print(f"  {'Total tests':<30s} {b['total']:>12d} {c['total']:>12d}")
     print(f"  {'Passed':<30s} {b['passed']:>12d} {c['passed']:>12d}")
     print(f"  {'Failed':<30s} {b['failed']:>12d} {c['failed']:>12d}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Regressions:           {len(result['regressions'])}")
     print(f"  Improvements:          {len(result['improvements'])}")
     print(f"  New tests:             {len(result['new_tests'])}")
@@ -414,30 +441,33 @@ def print_human_compare(result: dict):
     print(f"  Health score:          {result['health_score']}/100")
 
     if result["regressions"]:
-        print(f"\n  {'-'*56}")
+        print(f"\n  {'-' * 56}")
         print("  REGRESSIONS (Critical):")
         for r in result["regressions"]:
             print(f"    {r['test']}: {r['was']} -> {r['now']}")
 
     if result["performance_regressions"]:
-        print(f"\n  {'-'*56}")
+        print(f"\n  {'-' * 56}")
         print("  PERFORMANCE REGRESSIONS (Warning):")
         for p in result["performance_regressions"]:
-            print(f"    {p['test']}: {p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)")
+            print(
+                f"    {p['test']}: {p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)"
+            )
 
     if result["improvements"]:
-        print(f"\n  {'-'*56}")
+        print(f"\n  {'-' * 56}")
         print("  IMPROVEMENTS:")
         for i in result["improvements"]:
             print(f"    {i['test']}: {i['was']} -> {i['now']}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     status = "PASSED" if result["gate_passed"] else "FAILED"
     print(f"  Gate: {status} - {result['gate_reason']}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 # ── evoscore subcommand ─────────────────────────────────────────────
+
 
 def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
     """
@@ -470,16 +500,18 @@ def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
             a_ci = (n_ci - n_c0) / denom_val if denom_val > 0 else 0.0
         else:
             a_ci = (n_ci - n_c0) / n_c0 if n_c0 > 0 else 0.0
-        weight = gamma ** i
+        weight = gamma**i
         numerator += weight * a_ci
         denominator += weight
-        iteration_scores.append({
-            "iteration": entry.get("iteration", i + 1),
-            "passed": n_ci,
-            "regressions": entry.get("regressions", 0),
-            "a_score": round(a_ci, 4),
-            "weight": round(weight, 4),
-        })
+        iteration_scores.append(
+            {
+                "iteration": entry.get("iteration", i + 1),
+                "passed": n_ci,
+                "regressions": entry.get("regressions", 0),
+                "a_score": round(a_ci, 4),
+                "weight": round(weight, 4),
+            }
+        )
 
     evoscore = numerator / denominator if denominator > 0 else 0.0
 
@@ -538,9 +570,9 @@ def cmd_evoscore(args) -> int:
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("  arch-optimize EvoScore Report")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Gamma:                {result['gamma']}")
         print(f"  Iterations:           {result['iterations']}")
         print(f"  Baseline passed:      {result['baseline_passed']}")
@@ -550,17 +582,22 @@ def cmd_evoscore(args) -> int:
         print(f"  Max consecutive reg.:  {result['max_consecutive_regressions']}")
         if result.get("warning"):
             print(f"  WARNING:              {result['warning']}")
-        print(f"\n  {'-'*56}")
-        print(f"  {'Iter':<6s} {'Passed':<10s} {'Regress':<10s} {'a(c)':<10s} {'Weight':<10s}")
-        print(f"  {'-'*56}")
+        print(f"\n  {'-' * 56}")
+        print(
+            f"  {'Iter':<6s} {'Passed':<10s} {'Regress':<10s} {'a(c)':<10s} {'Weight':<10s}"
+        )
+        print(f"  {'-' * 56}")
         for s in result["iteration_scores"]:
-            print(f"  {s['iteration']:<6d} {s['passed']:<10d} {s['regressions']:<10d} {s['a_score']:<10.4f} {s['weight']:<10.4f}")
-        print(f"{'='*60}\n")
+            print(
+                f"  {s['iteration']:<6d} {s['passed']:<10d} {s['regressions']:<10d} {s['a_score']:<10.4f} {s['weight']:<10.4f}"
+            )
+        print(f"{'=' * 60}\n")
 
     return 0
 
 
 # ── CLI ─────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -580,21 +617,35 @@ Examples:
     # record
     p_record = subparsers.add_parser("record", help="Record test results to JSON")
     p_record.add_argument("--output", required=True, help="Output JSON file path")
-    p_record.add_argument("--test-cmd", default=None, help="Test command to run (auto-detected if omitted)")
-    p_record.add_argument("--cwd", default=".", help="Working directory for test command")
+    p_record.add_argument(
+        "--test-cmd",
+        default=None,
+        help="Test command to run (auto-detected if omitted)",
+    )
+    p_record.add_argument(
+        "--cwd", default=".", help="Working directory for test command"
+    )
     p_record.set_defaults(func=cmd_record)
 
     # compare
-    p_compare = subparsers.add_parser("compare", help="Compare baseline vs current test results")
+    p_compare = subparsers.add_parser(
+        "compare", help="Compare baseline vs current test results"
+    )
     p_compare.add_argument("--baseline", required=True, help="Baseline JSON file")
     p_compare.add_argument("--current", required=True, help="Current JSON file")
     p_compare.add_argument("--json", action="store_true", help="Output as JSON")
     p_compare.set_defaults(func=cmd_compare)
 
     # evoscore
-    p_evoscore = subparsers.add_parser("evoscore", help="Calculate EvoScore from history")
-    p_evoscore.add_argument("--history", required=True, help="History JSON file (array of iterations)")
-    p_evoscore.add_argument("--gamma", type=float, default=1.5, help="Discount factor (default: 1.5)")
+    p_evoscore = subparsers.add_parser(
+        "evoscore", help="Calculate EvoScore from history"
+    )
+    p_evoscore.add_argument(
+        "--history", required=True, help="History JSON file (array of iterations)"
+    )
+    p_evoscore.add_argument(
+        "--gamma", type=float, default=1.5, help="Discount factor (default: 1.5)"
+    )
     p_evoscore.add_argument("--json", action="store_true", help="Output as JSON")
     p_evoscore.set_defaults(func=cmd_evoscore)
 
