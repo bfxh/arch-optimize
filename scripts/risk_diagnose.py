@@ -16,7 +16,7 @@ Each finding is a dict with keys:
   risk, severity, location, symptom, source, consequence, remedy
 
 Supports: Python, Go, C/C++, Rust, TypeScript/JavaScript
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 risk_diagnose.py --target src/ --json

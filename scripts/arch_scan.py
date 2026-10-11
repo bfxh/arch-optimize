@@ -5,7 +5,7 @@ Scans a project directory and produces an architecture overview:
 directory tree, entry points, tech stack, architecture docs, and a
 module dependency summary (fan-in / fan-out).
 
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 arch_scan.py --target .

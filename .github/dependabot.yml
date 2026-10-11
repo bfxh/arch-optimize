@@ -1,4 +1,4 @@
-# 依赖更新自成 PR（spec/PR-DISCIPLINE.md），Dependabot 每周一提，单独 review / 回滚。
+# 依赖更新自成 PR，Dependabot 每周一提，逐个 review / 回滚（不配置自动合并）。
 version: 2
 updates:
   - package-ecosystem: pip

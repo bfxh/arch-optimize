@@ -5,7 +5,7 @@ Generates Mermaid/Graphviz dependency graphs from source code imports.
 Detects circular dependencies and calculates fan-in/fan-out metrics.
 
 Supports: Python, Go, C/C++, Rust, TypeScript/JavaScript
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 dep_graph.py --target src/ --format mermaid

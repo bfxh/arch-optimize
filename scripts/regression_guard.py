@@ -5,7 +5,7 @@ Runs test suites, compares before/after results, and calculates
 zero-regression rate and EvoScore for evolution tracking.
 
 Supports: go test, pytest, jest, cargo test
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 regression_guard.py record --output baseline.json

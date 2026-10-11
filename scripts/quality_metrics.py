@@ -5,12 +5,16 @@ Calculates Maintainability Index (MI), Cyclomatic Complexity (CC),
 Halstead Volume (HV), and Health Score for source code files.
 
 Supports: Python, Go, C/C++, Rust, TypeScript/JavaScript
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 quality_metrics.py --target src/ --json
     python3 quality_metrics.py --file main.go
-    python3 quality_metrics.py --target . --threshold-critical 15 --threshold-warning 10
+    python3 quality_metrics.py --target src/ --json --min-cc 10 --quiet
+
+Note: --min-cc only filters the per-function list in JSON output; hotspots,
+average_cc and max_cc are computed before filtering, so aggregate values do
+not change with this flag.
 """
 
 import argparse
