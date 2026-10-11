@@ -203,6 +203,36 @@ def _check_regression_is_detected():
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _check_self_scan_claims():
+    """README 的 Self-Scan 段落断言了可复算的事实，代码一变就判红去更新它。"""
+    data = run_script(
+        "quality_metrics.py",
+        "--target",
+        os.path.join(ROOT, "scripts"),
+        "--json",
+    )
+    names = [os.path.basename(f["file"]) for f in data["files"]]
+    below = [f["file"] for f in data["files"]
+             if f["maintainability_index"] < 15]
+    clearing = [os.path.basename(f["file"]) for f in data["files"]
+                if f["maintainability_index"] >= 15]
+    assert clearing == ["__init__.py"], (
+        f"README 说 scripts/ 下只有 __init__.py 能过 MI≥15，实际过线的是 {clearing}"
+    )
+    assert len(below) == 5, (
+        f"README 说五个扫描器全部低于 15，实际 {len(below)} 个低于 15"
+        f"（扫描了 {names}）"
+    )
+
+    diag = run_script(
+        "risk_diagnose.py", "--target", os.path.join(ROOT, "scripts"), "--json"
+    )
+    assert diag["health_score"]["score"] == 0, (
+        "README 说两个计分器在这个目录上都给 0 分"
+    )
+    assert diag["health_score"]["critical"] > 0, "README 说 risk_diagnose 侧有 Critical"
+
+
 EXPECTED_FLAGS = {
     "arch_scan.py": {"--target", "--json", "--depth"},
     "dep_graph.py": {"--target", "--json", "--output", "--format", "--max-depth"},
@@ -277,6 +307,7 @@ def test_smoke(tmp_path=None):
         _check_regression_guard()
         _check_regression_is_detected()
         _check_cli_surface_matches_docs()
+        _check_self_scan_claims()
     finally:
         shutil.rmtree(sample, ignore_errors=True)
 
