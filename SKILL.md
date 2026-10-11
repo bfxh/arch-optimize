@@ -86,8 +86,8 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 某测试变更前通过、变更后失败 = 回归 = Critical；`compare` 有回归即退出码 1。
 
 两点必须先知道再用它当门禁：
-- 判据只认"同名测试 pass→fail"。**测试被删除、被 skip、或改名**只会出现在 `removed_tests` / `new_tests` 里，不参与判定——清空整个测试套件仍会返回"零退化率 100%、gate 通过"。用它挡合并时必须另加"测试名集合与总数不得缩减"的自检。
-- `non_asymmetric_score` 当前不是文档承诺的 [0,1] 非对称分：无新增测试时分母为 1，实测"3 个改进 + 1 个真回归"得 +1.98。硬门（回归数==0）有效，这个分数只是装饰，不要引用它下结论。
+- 判据是"同名测试 pass→fail"**加上"通过过的测试不得无故消失"**：删除、改名、skip、清空套件都会让 `unexplained_removed_pass` 非空并判红（退出码 1）。有意的删除用 `--allow-removed <名字>`（可重复）或 `--allow-removed-file <路径>`（每行一个名字、`#` 注释）逐条放行，且会被单独记进 `findings` 与 `removed_pass`/`removed_fail`。删掉的是**失败**的测试不算——那属于合法清理，记在 `removed_fail`。
+- `non_asymmetric_score` 不是文档承诺的 [0,1] 非对称分：无新增测试时分母为 1，实测"3 个改进 + 1 个真回归"得 +1.98。硬门有效，这个分数不要引用它下结论。
 - `record` 没有 `--json`（它写文件）；pytest / cargo 解析器不产出 duration，性能回归档对这两类 runner 不生效。
 
 ## 按需加载索引
@@ -111,7 +111,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 | 门禁 | 阈值 | 来源 | 脚本能否直接判红 |
 |------|------|------|------------------|
 | 健康分 | ≥ 70 | 阶段三 | 能，但无规模归一，只可同范围前后比 |
-| 零退化率 | = 100% | 阶段五 | 能（`compare` 退出码 1），但删/改名测试可绕过 |
+| 零退化率 | = 100% | 阶段五 | 能（`compare` 退出码 1）；通过过的测试消失/改名/清空同样判红，有意的删除须 `--allow-removed` 放行 |
 | 新增代码 MI | ≥ 15 | 阶段三 | 需自己按改动文件逐个跑 `--file`，脚本无"新增代码"概念 |
 | 无新增循环依赖 | 0 项 | 阶段二 R5 | 部分：相对导入与包内环检不出，"0 项"≠无环 |
 
@@ -123,7 +123,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 | `dep_graph.py` | 一 | `--target`（必填）`--json --output F --format mermaid\|dot --max-depth N` | 一级目录级依赖图、环、Mermaid/DOT |
 | `risk_diagnose.py` | 二 | `--target` 或 `--file`，`--json --risk R1..R6`（可重复）`--min-severity` | R1-R6 四段式发现 + 健康分 |
 | `quality_metrics.py` | 三 | `--target` 或 `--file`，`--json --min-cc N --quiet` | MI/CC/HV/健康分/热点 |
-| `regression_guard.py` | 五 | 子命令 `record --output F [--test-cmd S] [--cwd D]` / `compare --baseline F --current F [--json]` / `evoscore --history F [--gamma G] [--json]` | 测试基线、回归对比、迭代分 |
+| `regression_guard.py` | 五 | 子命令 `record --output F [--test-cmd S] [--cwd D]` / `compare --baseline F --current F [--json] [--allow-removed N] [--allow-removed-file P]` / `evoscore --history F [--gamma G] [--json]` | 测试基线、回归对比（含测试消失判定）、迭代分 |
 
 阶段四（增量优化）是方法论，无脚本；双智能体流程见 `references/collaboration-workflow.md`。
 
@@ -145,7 +145,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 6. **R6 放过最典型的贫血模型**：判据要求"有 @property 且无公开方法"，`@dataclass`/纯字段类因方法数为 0 被豁免。
 7. **非 Python 的 CC 系统性偏低**（布尔运算符不计入、注释与字符串计入括号），CC 阈值门对这些语言几乎不触发；Rust/TS 的发现位置串可能带 `pub`/`export` 而非函数名。
 8. **dep_graph 的模块 = `--target` 下一级目录**：指向仓库根时 `src/` 布局会塌成一个节点、边为空。
-9. **regression_guard 不防"测试消失"**：删除、skip 或改名测试不会被判为回归，清空套件仍返回 100%；必须外加"测试名集合与总数不得缩减"的自检（`references/regression-guard.md` §5.1 给了可直接用的步骤）。
+9. **回归防护的硬门已覆盖"测试消失"**：删除 / skip / 改名 / 清空套件都会判红，有意的删除用 `--allow-removed` 或 `--allow-removed-file` 逐条放行并留痕；删掉的是失败测试则不算。仍要注意的是 `--allow-removed` 可以被人为滥用（把真回归的测试"有意删除"掉并放行），所以它必须和"测试总数不得缩减"这类外部自检一起用（`references/regression-guard.md` §5.1 给了可直接用的步骤）。
 10. **`non_asymmetric_score` 不可用于结论**：实测"3 改进 + 1 真回归"得 +1.98，方向与文档承诺相反；有效的只有回归列表与退出码。
 11. **架构级判断不由脚本给出**：分层是否合理、边界是否泄漏、抽象是否多余、命名是否属于统一语言，只能靠读代码得出。脚本的作用是把怀疑范围缩小到具体文件，不是替你判定。
 

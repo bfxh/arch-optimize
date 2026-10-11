@@ -10,12 +10,33 @@
 
 **回归 (Regression)**：某个测试用例在代码变更前已通过，但在变更后失败。
 
+**测试消失 (Vanished Test)**：某个测试用例在基线里是通过的，变更后在结果集里整个不见了——删除、改名、跳过、把套件清空都属这一类。它与功能回归同级处理：默认判红、退出码 1；只有逐条列进 `--allow-removed` / `--allow-removed-file` 才算放行，且放行会记进 `removed_pass` 与 `findings`，留痕可查。基线里**本来就是失败**的测试消失不算（那是合法清理，记在 `removed_fail`）。
+
+```bash
+# 默认：通过过的测试消失即判红
+python scripts/regression_guard.py compare --baseline b.json --current c.json --json
+
+# 有意的删除：逐条放行（可重复，也可用文件）
+python scripts/regression_guard.py compare --baseline b.json --current c.json \
+    --allow-removed test_old_feature_gone
+python scripts/regression_guard.py compare --baseline b.json --current c.json \
+    --allow-removed-file allowed_deletions.txt
+```
+
 ```
 基线状态: test_A ✅  test_B ✅  test_C ❌
 变更后:   test_A ❌  test_B ✅  test_C ✅
 
 结果: test_A 发生回归（🔴 Critical）
       test_C 改善（🟢 改进）
+```
+
+```
+基线状态: test_A ✅  test_B ✅
+变更后:   test_B ✅            # test_A 整个消失
+
+结果: test_A 测试消失（🔴 Critical，unexplained_removed_pass）
+      ——除非它在 --allow-removed 里
 ```
 
 ### 1.2 回归类型
@@ -215,12 +236,14 @@ jobs:
 
       - name: Check regressions (hard gate)
         run: |
-          # 有 pass->fail 回归时退出码为 1
+          # 退出码 1 的两种情形：pass->fail，或通过过的测试消失且未放行
           python scripts/regression_guard.py compare \
             --baseline baseline.json --current current.json --json
 
-      - name: Test set must not shrink (compare 不判这一步)
+      - name: Test set must not shrink (defence in depth)
         run: |
+          # compare 已能拦"通过过的测试消失"，但 --allow-removed 可能被滥用；
+          # 这一步从外部再卡一次总数，防止把真回归的测试"有意删除"掉并放行
           python - <<'PY'
           import json, sys
           b = json.load(open("baseline.json", encoding="utf-8"))
@@ -279,7 +302,7 @@ jobs:
 
 | 门禁 | 阈值 | 类型 | 失败行为 | 本仓脚本能否直接判 |
 |------|------|------|---------|--------------------|
-| 零退化率 | = 100% | 硬性 | 阻断 PR | `compare` 退出码 1；需另加"测试集不缩减"一道（见 5.1） |
+| 零退化率 | = 100% | 硬性 | 阻断 PR | `compare` 退出码 1；覆盖 pass→fail **与**通过过的测试消失（改名/清空同理），放行须 `--allow-removed`/`--allow-removed-file` |
 | 健康分 | ≥ 70 | 软性 | 警告 + 需人工审批 | 只给分数，判断要自己写（见 5.1）；无规模归一 |
 | 发布健康分 | ≥ 80 | 硬性 | 阻断发布 | **无实现** |
 | 新代码 MI | ≥ 15 | 硬性 | 阻断 PR | 需逐文件 `--file`（脚本无"新增代码"概念） |

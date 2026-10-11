@@ -20,7 +20,7 @@ All scripts use Python 3.10+ standard library only (zero external dependencies, 
 | `scripts/dep_graph.py` | 1 | Dependency graph (Mermaid/DOT), circular dependency detection |
 | `scripts/risk_diagnose.py` | 2 | R1-R6 six decay risk scanning, four-part findings |
 | `scripts/quality_metrics.py` | 3 | MI/CC/HV/Health Score calculation, hotspot identification |
-| `scripts/regression_guard.py` | 5 | Test baseline recording, regression comparison |
+| `scripts/regression_guard.py` | 5 | Test baseline recording, regression comparison (incl. vanished tests) |
 
 ## Six Decay Risks (R1-R6)
 
@@ -82,8 +82,11 @@ python3 scripts/quality_metrics.py --target ./src --json
 python3 scripts/quality_metrics.py --file src/main.py --json
 
 # Stage 5: regression guard
-python3 scripts/regression_guard.py record --output baseline.json
+python3 scripts/regression_guard.py record --output baseline.json --test-cmd "python -m pytest -v"
 python3 scripts/regression_guard.py compare --baseline baseline.json --current current.json --json
+# 有意的测试删除要逐条放行，否则会判红（见 Quality Gate Rules 下）
+python3 scripts/regression_guard.py compare --baseline baseline.json --current current.json \
+    --allow-removed test_removed_on_purpose
 ```
 
 Typical agent pipeline: arch_scan → dep_graph → risk_diagnose → quality_metrics → regression_guard, passing each stage's JSON as context to the next.
@@ -106,7 +109,7 @@ For non-Python languages, CC and function extents come from regex plus brace cou
 | Cyclomatic complexity | <= 15 | Hard | Block PR merge (Python only; see Supported Languages) |
 | Circular dependencies | = 0 | Hard | Block PR merge |
 
-Only the regression gate is enforceable straight from an exit code, and `compare` does not flag deleted or renamed tests — pair it with a "test set must not shrink" step. A runnable workflow using only the scripts in this repo is in [`references/regression-guard.md`](references/regression-guard.md) §5.1.
+Only the regression gate is enforceable straight from an exit code, and it now covers both failure modes: a previously-passing test failing **and** a previously-passing test disappearing (delete, rename, skip, or an emptied suite) — the latter fails unless each name is allow-listed with `--allow-removed` / `--allow-removed-file`. Deleting a test that was already failing is allowed. A runnable workflow using only the scripts in this repo is in [`references/regression-guard.md`](references/regression-guard.md) §5.1.
 
 ## Design Principles
 
