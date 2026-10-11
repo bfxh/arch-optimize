@@ -12,7 +12,7 @@ Architecture optimization skill: six decay risk scanning (R1-R6), architect-prog
 
 ## Script Tools
 
-All scripts use Python 3.8+ standard library only (zero external dependencies) and output structured JSON.
+All scripts use Python 3.10+ standard library only (zero external dependencies, CI-tested on 3.10 and 3.13) and output structured JSON.
 
 | Script | Stage | Function |
 |--------|-------|----------|
@@ -24,20 +24,22 @@ All scripts use Python 3.8+ standard library only (zero external dependencies) a
 
 ## Six Decay Risks (R1-R6)
 
-| Risk | Critical Threshold |
-|------|--------------------|
-| R1 Cognitive Overload | function >50 lines; nesting >5 levels |
-| R2 Change Propagation | change touches >5 files |
-| R3 Knowledge Duplication | same decision repeated across 3+ modules |
-| R4 Accidental Complexity | cyclomatic complexity >15 |
-| R5 Dependency Disorder | circular dependency exists |
-| R6 Domain Model Distortion | anemic domain model |
+| Risk | Concept | What the script actually asserts |
+|------|---------|----------------------------------|
+| R1 Cognitive Overload | understanding cost | function >50 lines, nesting >5, **CC >15** = Critical; 20–50 lines / 4–5 nesting = Warning; params >4 = Warning |
+| R2 Change Propagation | one change hits many places | per-file import fan-out: >7 Critical, ≥5 Warning (not git co-change count) |
+| R3 Knowledge Duplication | one decision expressed twice | 8-gram Jaccard ≥0.6/≥0.8 within the **same top-level directory**; 2+-digit literals repeated ≥3 times across ≥2 files = Critical |
+| R4 Accidental Complexity | code harder than the problem | **CC >20** = Critical (Warning on algorithmic paths); abstraction with a single implementation *in the same file* = Warning |
+| R5 Dependency Disorder | dependencies point one way | file-level cycles = Critical; domain importing an infra-looking name = Critical; inner depending on outer = Critical |
+| R6 Domain Model Distortion | code mirrors the domain | generic directory name = Warning; cross-context keyword = Warning; Python class with `@property` and zero public methods = Critical |
+
+Thresholds and every known blind spot (relative imports not graphed, `@dataclass` exempt from the anemic check, cross-directory duplicates skipped, non-Python CC under-counted by the `&&`/`||` regex, `pub`/`export` leaking into Rust/TS finding names) are listed in [`references/architecture-principles.md`](references/architecture-principles.md) §四 "脚本实测口径". **An empty result from a scanner is not evidence of absence.**
 
 False-positive protection (composition-root wiring is not DIP violation, DTOs are not anemic models, etc.) lives in [`references/architecture-principles.md`](references/architecture-principles.md).
 
 ## Installation
 
-Requires Python 3.8+ only. No dependencies to install.
+Requires Python 3.10+ only. No dependencies to install.
 
 ```bash
 git clone https://github.com/bfxh/arch-optimize.git
@@ -54,11 +56,11 @@ python tests/test_smoke.py    # zero-dependency smoke tests (standalone)
 pytest                        # same suite via pytest, if installed
 ```
 
-The suite builds a sample two-package project, runs all five scripts against it, validates JSON schemas, checks determinism, and does a record→compare regression roundtrip.
+The suite builds a sample two-package project, runs all five scripts against it, asserts that each JSON payload contains the expected keys (plus one `pkg_a -> pkg_b` edge), checks that `risk_diagnose` output is deterministic, and does a `record` → `compare` roundtrip. Scope limits worth knowing before treating green as meaningful: no test asserts that any R1-R6 detector actually fires, no test asserts that a real regression is reported (the roundtrip compares a baseline with itself), the roundtrip silently skips when `record` fails, and the fixture places both packages at the repository root, which is exactly the layout that hides `dep_graph`'s `src/` collapse.
 
 ## Self-Scan Note
 
-Running these tools on this repository itself reports a low health score: `risk_diagnose.py` is a ~1,100-line single-file scanner with intentionally dense dispatch functions. The scanners target production codebases, not skill packages bundled with scripts-as-data. Treat self-scan results as demo output, not a quality claim about your project.
+Running these tools on this repository itself reports poor numbers: over `scripts/` the average MI is 24.18 with 5 of 6 files below the 15 gate (3.44–12.4), and both scorers return health 0 — `risk_diagnose` from 31 Critical + 41 Warning, `quality_metrics` from 10 Critical + 6 Warning. That is mostly a size artifact, not a density artifact: MI here is computed per whole file and dominated by the `16.2·ln(LOC)` term, the health score subtracts a flat 15 per finding with no normalization by code volume, and the two scorers count findings over different detectors and different file sets, which is why the same directory gives them different inputs. The scanners target production codebases, not skill packages bundled with scripts-as-data. Treat self-scan results as demo output, not a quality claim about your project.
 
 ## Usage
 
@@ -82,9 +84,13 @@ python3 scripts/regression_guard.py compare --baseline baseline.json --current c
 
 Typical agent pipeline: arch_scan → dep_graph → risk_diagnose → quality_metrics → regression_guard, passing each stage's JSON as context to the next.
 
+Two caveats when chaining them: `arch_scan` embeds a `scan_timestamp`, so two runs are byte-different across a second boundary and must not be diffed naively; `dep_graph` treats the first directory level under `--target` as a module, so pointing it at a repository root with a `src/` layout collapses every file into one `src` node and yields an empty graph — point it at the module root instead.
+
 ## Supported Languages
 
-Python (.py via ast), Go, C/C++, Rust, TypeScript/JavaScript — import parsing, CC calculation, and function extraction for each.
+Python (.py via `ast`), Go, C/C++, Rust, TypeScript/JavaScript — import parsing, CC calculation, and function extraction for each.
+
+For non-Python languages, CC and function extents come from regex plus brace counting: comments, string literals, and boolean operators (`&&`, `||`) are not counted as decisions, so CC is systematically low and the CC thresholds rarely fire there. Treat those numbers as hints, not verdicts.
 
 ## Quality Gate Rules
 
@@ -93,8 +99,10 @@ Python (.py via ast), Go, C/C++, Rust, TypeScript/JavaScript — import parsing,
 | Zero regression rate | = 100% | Hard | Block PR merge |
 | Health score | >= 70 | Soft | Warning + manual approval |
 | New code MI | >= 15 | Hard | Block PR merge |
-| Cyclomatic complexity | <= 15 | Hard | Block PR merge |
+| Cyclomatic complexity | <= 15 | Hard | Block PR merge (Python only; see Supported Languages) |
 | Circular dependencies | = 0 | Hard | Block PR merge |
+
+Only the regression gate is enforceable straight from an exit code, and `compare` does not flag deleted or renamed tests — pair it with a "test set must not shrink" step. A runnable workflow using only the scripts in this repo is in [`references/regression-guard.md`](references/regression-guard.md) §5.1.
 
 ## Design Principles
 
@@ -102,8 +110,8 @@ Python (.py via ast), Go, C/C++, Rust, TypeScript/JavaScript — import parsing,
 2. **Incremental over large-scale**: at most 5 improvement requirements per iteration
 3. **Zero regression tolerance**: breaking existing functionality costs more than adding features
 4. **Division of labor over omniscience**: architect handles strategy, programmer handles execution
-5. **Quantitative over intuitive**: MI and health score provide objective baselines
-6. **False positive protection**: avoid misclassifying normal design pattern usage as violations
+5. **Quantitative as evidence, not verdict**: MI and health score are repeatable baselines for the *same* scope over time; they are heuristic proxies, and architecture-level judgement (layering, boundaries, whether an abstraction earns its keep) stays with the reader
+6. **False positive protection**: avoid misclassifying normal design pattern usage as violations — note that several guards suppress real findings too (see §四 of architecture-principles.md), so absence of a finding is not absence of a problem
 7. **Executable over pure documentation**: every rule has a corresponding script implementation
 
 ## Project Structure
@@ -121,11 +129,12 @@ arch-optimize/
 │   ├── quality_metrics.py            # Stage 3: MI/CC/HV/health score
 │   └── regression_guard.py           # Stage 5: baseline record & compare
 └── references/                       # Load on demand per SKILL.md index
-    ├── architecture-principles.md    # Clean Architecture, SOLID thresholds, R1-R6 detail
+    ├── architecture-principles.md    # Clean Architecture, SOLID thresholds, R1-R6 detail + measured script caliber
     ├── coding-conventions.md         # C/C++/Rust/Go/TypeScript conventions
-    ├── quality-metrics.md            # MI formula details, Pain×Spread debt ranking
-    ├── regression-guard.md           # Zero regression rate, asymmetric scoring
-    └── collaboration-workflow.md     # Architect-programmer dual-agent workflow
+    ├── quality-metrics.md            # MI formula details, tech debt Pain×Spread ranking
+    ├── regression-guard.md           # Zero regression rate, asymmetric scoring, CI gate
+    ├── collaboration-workflow.md     # Architect-programmer dual-agent workflow
+    └── engineering-responsibility.md # Root philosophy, src/bin project layout rules
 ```
 
 ## Companion Skills
