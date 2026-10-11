@@ -239,6 +239,114 @@ def _load_json(path):
         return json.load(fh)
 
 
+def _check_r6_anemic_detector():
+    """R6 贫血判据：访问器-only 判 Warning，纯字段判 Suggestion，有行为/DTO/Service 不报。
+
+    改前这个判据是逻辑不可达的：`behavioral` 不排除 property 装饰的方法，所以
+    "有 property ⇒ behavioral 非空 ⇒ 条件永不成立"，实测四个用例全部 0 发现。
+    """
+    root = tempfile.mkdtemp(prefix="arch-opt-r6-")
+    cases = {
+        # 访问器-only -> Warning
+        "accessor_only/domain/customer.py": (
+            "class Customer:\n"
+            "    def __init__(self, name):\n"
+            "        self._name = name\n"
+            "\n"
+            "    @property\n"
+            "    def name(self):\n"
+            "        return self._name\n"
+            "\n"
+            "    @name.setter\n"
+            "    def name(self, v):\n"
+            "        self._name = v\n",
+            "Warning",
+        ),
+        # get_/set_ 风格 -> Warning
+        "getset_style/domain/account.py": (
+            "class Account:\n"
+            "    def __init__(self, bal):\n"
+            "        self._bal = bal\n"
+            "\n"
+            "    def get_balance(self):\n"
+            "        return self._bal\n"
+            "\n"
+            "    def set_balance(self, v):\n"
+            "        self._bal = v\n",
+            "Warning",
+        ),
+        # 纯字段 -> Suggestion（提示，不断言）
+        "pure_fields/domain/order.py": (
+            "from dataclasses import dataclass\n"
+            "\n"
+            "\n"
+            "@dataclass\n"
+            "class Order:\n"
+            "    customer_id: str\n"
+            "    total_cents: int\n",
+            "Suggestion",
+        ),
+        # 有行为 -> 不报
+        "behavioral/domain/invoice.py": (
+            "class Invoice:\n"
+            "    def __init__(self, total):\n"
+            "        self.total = total\n"
+            "\n"
+            "    def apply_discount(self, pct):\n"
+            "        return int(self.total * (100 - pct) / 100)\n",
+            "-",
+        ),
+        # DTO 豁免 -> 不报
+        "dto/api/order_dto.py": (
+            "class OrderDTO:\n"
+            "    def __init__(self, **kw):\n"
+            "        self.__dict__.update(kw)\n"
+            "\n"
+            "    @property\n"
+            "    def id(self):\n"
+            "        return self.__dict__.get('id')\n",
+            "-",
+        ),
+        # *Service 豁免 -> 不报
+        "service/domain/svc.py": (
+            "class OrderService:\n"
+            "    def place(self, order):\n"
+            "        return order\n"
+            "\n"
+            "    def cancel(self, order):\n"
+            "        return None\n",
+            "-",
+        ),
+    }
+    try:
+        for rel, (src, _expected) in cases.items():
+            path = os.path.join(root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(src)
+        for rel, (_, expected) in cases.items():
+            data = run_script(
+                "risk_diagnose.py",
+                "--target",
+                os.path.join(root, rel.split("/")[0]),
+                "--risk",
+                "R6",
+                "--json",
+            )
+            anemic = [
+                f
+                for f in data["findings"]
+                if "访问器" in f["symptom"] or "只有字段" in f["symptom"]
+            ]
+            got = anemic[0]["severity"] if anemic else "-"
+            assert got == expected, (
+                f"{rel}: 期望 {expected}，实际 {got}"
+                f"（症状 {anemic[0]['symptom'][:50] if anemic else '无'}）"
+            )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_gate_blocks_vanish():
     """P0：通过过的测试消失/改名/清空，必须判红；放行通道必须可用。"""
     out_dir = tempfile.mkdtemp(prefix="arch-opt-vanish-")
@@ -475,6 +583,7 @@ def test_smoke(tmp_path=None):
         _check_regression_guard()
         _check_regression_is_detected()
         _check_gate_blocks_vanish()
+        _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()
     finally:

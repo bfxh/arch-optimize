@@ -1190,35 +1190,56 @@ def _r6_python_anemic(source, rel):
         ):
             continue
         methods = [m for m in node.body if isinstance(m, ast.FunctionDef)]
-        behavioral = [
-            m
-            for m in methods
-            if not m.name.startswith("_")
-            and not isinstance(next(iter(m.decorator_list), None), property)
-            and m.name not in ("get", "set", "is", "has")
-        ]
-        # property getters/setters only
-        prop_methods = [
-            m
-            for m in methods
+        public = [m for m in methods if not m.name.startswith("_")]
+
+        def _is_property(m):
+            """property / .setter / .getter 装饰，或 get_/set_ 与裸 get/set/is/has 命名。"""
+            decos = {_ast_name(d) for d in m.decorator_list}
             if any(
-                isinstance(d, property) or _ast_name(d) == "property"
-                for d in m.decorator_list
+                d == "property" or (d or "").endswith((".setter", ".getter"))
+                for d in decos
+            ):
+                return True
+            return m.name in ("get", "set", "is", "has") or m.name.startswith(
+                ("get_", "set_")
             )
-        ]
-        if methods and not behavioral and len(prop_methods) >= 1:
+
+        has_property = any(_is_property(m) for m in methods)
+
+        # 公开面全是访问器、没有任何决策/变更行为
+        if public and all(_is_property(m) for m in public) and has_property:
             findings.append(
                 _finding(
                     "R6",
-                    "Critical",
+                    "Warning",
                     f"{rel}:{name}:{node.lineno}",
-                    symptom=f"领域对象 {name} 仅含 getter/setter，无行为方法",
+                    symptom=f"领域对象 {name} 的公开面只有访问器（{len(public)} 个），无行为方法",
                     source="业务逻辑外溢到 Service 层，领域对象退化为数据袋",
                     consequence="领域规则分散且不可复用，不变量无法被对象自身保护",
-                    remedy="将相关业务行为迁回领域对象，让对象封装自身不变量",
+                    remedy="将相关业务行为迁回领域对象，让对象封装自身不变量；"
+                    "若这是只读视图/值对象，则属误报，记录原因即可",
+                )
+            )
+        # 纯字段类（含 @dataclass 的零方法类）：提示，不断言
+        elif not public and has_class_fields(node):
+            findings.append(
+                _finding(
+                    "R6",
+                    "Suggestion",
+                    f"{rel}:{name}:{node.lineno}",
+                    symptom=f"领域对象 {name} 只有字段、没有任何方法",
+                    source="纯字段类；若业务逻辑都在 Service 层，这就是典型的贫血模型",
+                    consequence="领域规则无法被对象自身保护，复用只能靠复制 Service 调用",
+                    remedy="若为值对象（金额/地址等不可变数据）则无需处理；"
+                    "否则把不变量与行为迁回对象自身",
                 )
             )
     return findings
+
+
+def has_class_fields(node) -> bool:
+    """类体里是否有字段声明（AnnAssign/Assign），dataclass 与纯属性类都算。"""
+    return any(isinstance(stmt, (ast.AnnAssign, ast.Assign)) for stmt in node.body)
 
 
 # ── Finding assembly & aggregation ──────────────────────────────────

@@ -49,7 +49,7 @@ python scripts/risk_diagnose.py --target <项目> --json
 | R3 | 知识重复 | 同一决策多处表达 | 8-gram Jaccard ≥0.6 Warning / ≥0.8 Critical，**仅限同一顶层目录内**；≥2 位数字面量重复 ≥3 次且跨 ≥2 文件 = Critical | 跨顶层目录的重复块（被上下文豁免跳过） |
 | R4 | 偶发复杂性 | 比问题本身更复杂 | CC >20 = Critical（路径含算法关键词降 Warning）；同文件内仅一个实现的抽象类/接口/工厂 = Warning | 跨文件的实现计数；"这个抽象是否必要" |
 | R5 | 依赖失序 | 依赖方向一致 | 文件级循环依赖 = Critical；领域层 import 含 infra 关键词的模块 = Critical；内层(rank≥2)依赖外层 = Critical | 相对导入 `from . import x` 不建边，包内环检不出 |
-| R6 | 领域模型扭曲 | 代码忠实表达问题 | 目录名命中通用技术词 = Warning；跨上下文关键词泄漏 = Warning；Python 类"有 @property 且无任何公开方法" = Critical | `@dataclass`/纯字段类不触发（方法数为 0 即豁免） |
+| R6 | 领域模型扭曲 | 代码忠实表达问题 | 目录名命中通用技术词 = Warning；跨上下文关键词泄漏 = Warning；Python 类"公开面全是访问器" = Warning、"只有字段无任何方法" = Suggestion | `@dataclass` 纯字段类只给 Suggestion（值对象也长这样）；跨语言不判 |
 
 > **注意 CC 的两个不同阈值**：CC>15 记在 **R1**（认知过载），CC>20 才记 **R4**（偶发复杂性）。二者是两条独立判据，不是同一规则的两种写法。
 > 非 Python 语言的 CC 与函数抽取是**正则近似**（布尔运算符 `&&`/`||` 当前不计入），数值系统性偏低；阈值门对这些语言基本不触发，结论要靠自己读代码。
@@ -142,7 +142,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 3. **R5 有反方向的假阳性**：infra 关键词是裸子串匹配，`os` 会命中 `costs`/`post`/`compose`，把普通的兄弟模块导入判成"领域层依赖基础设施"Critical。
 4. **R3 只比同目录**：跨顶层目录的完全相同函数被"不同限界上下文"豁免掉；而每个不同的数字面量各出一条 Critical，容易成批刷屏。
 5. **R4 按单文件数实现**：抽象类与其唯一实现分处两文件（常见布局）检不出；同文件 `interface + class` 的惯用写法必报。
-6. **R6 放过最典型的贫血模型**：判据要求"有 @property 且无公开方法"，`@dataclass`/纯字段类因方法数为 0 被豁免。
+6. **R6 的贫血判据只覆盖 Python，且分两档**："公开面全是访问器"给 Warning（这是明确信号），"只有字段无任何方法"只给 Suggestion——脚本分不出"贫血领域对象"和"值对象/ORM 实体"，后者同样长这样，需要你自己读代码定性。改之前这条判据是逻辑不可达的（详见 `references/architecture-principles.md` §四 口径表）。
 7. **非 Python 的 CC 系统性偏低**（布尔运算符不计入、注释与字符串计入括号），CC 阈值门对这些语言几乎不触发；Rust/TS 的发现位置串可能带 `pub`/`export` 而非函数名。
 8. **dep_graph 的模块 = `--target` 下一级目录**：指向仓库根时 `src/` 布局会塌成一个节点、边为空。
 9. **回归防护的硬门已覆盖"测试消失"**：删除 / skip / 改名 / 清空套件都会判红，有意的删除用 `--allow-removed` 或 `--allow-removed-file` 逐条放行并留痕；删掉的是失败测试则不算。仍要注意的是 `--allow-removed` 可以被人为滥用（把真回归的测试"有意删除"掉并放行），所以它必须和"测试总数不得缩减"这类外部自检一起用（`references/regression-guard.md` §5.1 给了可直接用的步骤）。
