@@ -15,6 +15,7 @@ on:
       - '**.py'
       - '**/pyproject.toml'
       - '**/setup.cfg'
+  workflow_dispatch:  # 分支推送本身不触发这些门（受 branches/paths 限制），需要时手动跑
 
 permissions:
   contents: read

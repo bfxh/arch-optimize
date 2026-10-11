@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:  # 未开 PR 时也能按需跑一次冒烟
 
 jobs:
   smoke:
