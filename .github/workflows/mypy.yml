@@ -15,6 +15,7 @@ on:
       - '**.py'
       - '**/pyproject.toml'
       - '**/setup.cfg'
+  workflow_dispatch:  # 分支推送本身不触发这些门（受 branches/paths 限制），需要时手动跑
 
 permissions:
   contents: read
@@ -34,7 +35,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install MyPy
-        run: pip install mypy
+        run: pip install "mypy==2.3.1"  # 钉版本：规则面随版本变化，否则门的判定会无因漂移
 
       - name: Install type stubs
         run: |
@@ -47,11 +48,11 @@ jobs:
             pip install -e . || true
           fi
 
-      - name: Run MyPy
-        run: mypy . --ignore-missing-imports --show-error-codes --show-error-context
-        continue-on-error: true
+      - name: Run MyPy (blocking)
+        # 非 strict 档已清零（20 -> 0），这一步判红即为真回归
+        run: mypy . --ignore-missing-imports --show-error-codes
 
-      - name: Run MyPy with strict mode
+      - name: Run MyPy with strict mode (report only)
         run: mypy . --strict --ignore-missing-imports --output json > mypy-report.json || true
         continue-on-error: true
 

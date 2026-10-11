@@ -5,7 +5,7 @@ Scans a project directory and produces an architecture overview:
 directory tree, entry points, tech stack, architecture docs, and a
 module dependency summary (fan-in / fan-out).
 
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 arch_scan.py --target .
@@ -22,39 +22,70 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Constants ──────────────────────────────────────────────────────
 
 IGNORE_DIRS = {
-    ".git", "node_modules", "vendor", "__pycache__",
-    ".cache", "dist", "build", "target", ".venv",
+    ".git",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".venv",
 }
 
 LANG_EXTENSIONS = {
     ".py": "Python",
     ".go": "Go",
-    ".c": "C", ".h": "C",
-    ".cpp": "C++", ".cc": "C++", ".cxx": "C++", ".hpp": "C++",
+    ".c": "C",
+    ".h": "C",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".cxx": "C++",
+    ".hpp": "C++",
     ".rs": "Rust",
-    ".ts": "TypeScript", ".tsx": "TypeScript",
-    ".js": "JavaScript", ".jsx": "JavaScript",
-    ".java": "Java", ".kt": "Kotlin",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".java": "Java",
+    ".kt": "Kotlin",
 }
 
 # Files that mark a directory as a module boundary
 MODULE_MARKERS = {
-    "go.mod", "package.json", "Cargo.toml", "__init__.py",
-    "CMakeLists.txt", "build.gradle", "pom.xml",
+    "go.mod",
+    "package.json",
+    "Cargo.toml",
+    "__init__.py",
+    "CMakeLists.txt",
+    "build.gradle",
+    "pom.xml",
 }
 
 # Entry point file names
 ENTRY_POINT_FILES = {
-    "main.go", "main.py", "__main__.py", "app.py", "manage.py", "setup.py",
-    "main.c", "main.cpp", "main.rs",
-    "index.ts", "index.js", "app.ts", "server.ts", "main.ts",
+    "main.go",
+    "main.py",
+    "__main__.py",
+    "app.py",
+    "manage.py",
+    "setup.py",
+    "main.c",
+    "main.cpp",
+    "main.rs",
+    "index.ts",
+    "index.js",
+    "app.ts",
+    "server.ts",
+    "main.ts",
 }
 
 # Entry point directories
@@ -62,47 +93,79 @@ ENTRY_POINT_DIRS = {"cmd", "src/bin", "bin"}
 
 # Build system files in priority order
 BUILD_FILES = [
-    "go.mod", "package.json", "Cargo.toml", "CMakeLists.txt",
-    "Makefile", "build.gradle", "pom.xml",
+    "go.mod",
+    "package.json",
+    "Cargo.toml",
+    "CMakeLists.txt",
+    "Makefile",
+    "build.gradle",
+    "pom.xml",
 ]
 
 # Architecture documents to locate (priority order)
 ARCH_DOCS = [
-    "SPEC.md", "CLAUDE.md", "REASONIX.md", "ARCHITECTURE.md",
-    "DESIGN.md", "CONTRIBUTING.md", "README.md",
+    "SPEC.md",
+    "CLAUDE.md",
+    "REASONIX.md",
+    "ARCHITECTURE.md",
+    "DESIGN.md",
+    "CONTRIBUTING.md",
+    "README.md",
 ]
 
 # Framework keywords per config file: { config: { keyword: label } }
 FRAMEWORK_PATTERNS = {
     "package.json": {
-        "react": "React", "vue": "Vue", "next": "Next.js",
-        "express": "Express", "nestjs": "NestJS", "@nestjs": "NestJS",
-        "angular": "Angular", "svelte": "Svelte", "fastify": "Fastify",
+        "react": "React",
+        "vue": "Vue",
+        "next": "Next.js",
+        "express": "Express",
+        "nestjs": "NestJS",
+        "@nestjs": "NestJS",
+        "angular": "Angular",
+        "svelte": "Svelte",
+        "fastify": "Fastify",
         "nuxt": "Nuxt",
     },
     "go.mod": {
-        "gin-gonic/gin": "Gin", "gorilla/mux": "Gorilla Mux",
-        "labstack/echo": "Echo", "gofiber/fiber": "Fiber",
-        "go-chi/chi": "Chi", "spf13/cobra": "Cobra", "gorm.io/gorm": "GORM",
+        "gin-gonic/gin": "Gin",
+        "gorilla/mux": "Gorilla Mux",
+        "labstack/echo": "Echo",
+        "gofiber/fiber": "Fiber",
+        "go-chi/chi": "Chi",
+        "spf13/cobra": "Cobra",
+        "gorm.io/gorm": "GORM",
     },
     "Cargo.toml": {
-        "tokio": "Tokio", "serde": "Serde", "actix-web": "Actix Web",
-        "rocket": "Rocket", "axum": "Axum", "warp": "Warp",
-        "clap": "Clap", "reqwest": "Reqwest",
+        "tokio": "Tokio",
+        "serde": "Serde",
+        "actix-web": "Actix Web",
+        "rocket": "Rocket",
+        "axum": "Axum",
+        "warp": "Warp",
+        "clap": "Clap",
+        "reqwest": "Reqwest",
     },
 }
 
 PYTHON_FRAMEWORKS = {
-    "django": "Django", "flask": "Flask", "fastapi": "FastAPI",
-    "torch": "PyTorch", "tensorflow": "TensorFlow",
-    "scrapy": "Scrapy", "celery": "Celery",
+    "django": "Django",
+    "flask": "Flask",
+    "fastapi": "FastAPI",
+    "torch": "PyTorch",
+    "tensorflow": "TensorFlow",
+    "scrapy": "Scrapy",
+    "celery": "Celery",
 }
 
 # Test framework markers (file basename -> label)
 TEST_FRAMEWORK_FILES = {
     "pytest.ini": "pytest",
-    "jest.config.js": "Jest", "jest.config.ts": "Jest", "jest.config.json": "Jest",
-    ".mocharc.yml": "Mocha", ".mocharc.js": "Mocha",
+    "jest.config.js": "Jest",
+    "jest.config.ts": "Jest",
+    "jest.config.json": "Jest",
+    ".mocharc.yml": "Mocha",
+    ".mocharc.js": "Mocha",
     "CTestTestfile.cmake": "CTest",
 }
 
@@ -110,6 +173,7 @@ MAX_CHILDREN_PER_NODE = 100
 
 
 # ── Directory scanning ─────────────────────────────────────────────
+
 
 def _normalize(rel):
     """Normalize a relative path to forward slashes."""
@@ -159,8 +223,11 @@ def _scan_children(abs_root, dir_path, depth, max_depth):
         rel = _normalize(os.path.relpath(full, abs_root))
         if os.path.isdir(full):
             child = {"name": entry, "type": "dir", "path": rel}
-            child["children"] = (_scan_children(abs_root, full, depth + 1, max_depth)
-                                 if depth < max_depth else [])
+            child["children"] = (
+                _scan_children(abs_root, full, depth + 1, max_depth)
+                if depth < max_depth
+                else []
+            )
             children.append(child)
         else:
             children.append({"name": entry, "type": "file", "path": rel})
@@ -181,6 +248,7 @@ def _count_dirs(node):
 
 
 # ── Tech stack detection ───────────────────────────────────────────
+
 
 def detect_languages(files):
     """Count files by language based on extension."""
@@ -235,7 +303,8 @@ def detect_frameworks(files):
     gomod = by_name.get("go.mod")
     if gomod:
         try:
-            content = open(gomod, encoding="utf-8", errors="replace").read()
+            with open(gomod, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
             for key, label in FRAMEWORK_PATTERNS["go.mod"].items():
                 if key in content:
                     found.append(label)
@@ -245,7 +314,8 @@ def detect_frameworks(files):
     cargo = by_name.get("Cargo.toml")
     if cargo:
         try:
-            content = open(cargo, encoding="utf-8", errors="replace").read()
+            with open(cargo, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
             for key, label in FRAMEWORK_PATTERNS["Cargo.toml"].items():
                 if key in content:
                     found.append(label)
@@ -256,8 +326,8 @@ def detect_frameworks(files):
     for pyf in ("requirements.txt", "setup.py"):
         if by_name.get(pyf):
             try:
-                py_source += "\n" + open(by_name[pyf], encoding="utf-8",
-                                         errors="replace").read().lower()
+                with open(by_name[pyf], encoding="utf-8", errors="replace") as fh:
+                    py_source += "\n" + fh.read().lower()
             except Exception:
                 pass
     for key, label in PYTHON_FRAMEWORKS.items():
@@ -278,14 +348,20 @@ def detect_test_frameworks(files):
         found.append("go test")
     if any(os.path.basename(rel).endswith("_test.rs") for rel, _ in files):
         found.append("cargo test")
-    if (any(os.path.basename(rel).startswith("test_") and rel.endswith(".py")
-            for rel, _ in files) and "pytest" not in found):
+    if (
+        any(
+            os.path.basename(rel).startswith("test_") and rel.endswith(".py")
+            for rel, _ in files
+        )
+        and "pytest" not in found
+    ):
         found.append("pytest/unittest")
     seen = set()
     return [t for t in found if not (t in seen or seen.add(t))]
 
 
 # ── Entry point detection ──────────────────────────────────────────
+
 
 def detect_entry_points(target, files):
     """Detect entry point files and directories."""
@@ -294,16 +370,19 @@ def detect_entry_points(target, files):
         fname = os.path.basename(rel)
         if fname in ENTRY_POINT_FILES:
             lang = LANG_EXTENSIONS.get(Path(rel).suffix.lower(), "unknown")
-            entry_points.append({"path": rel, "name": fname,
-                                 "language": lang, "type": "file"})
+            entry_points.append(
+                {"path": rel, "name": fname, "language": lang, "type": "file"}
+            )
     for epd in ENTRY_POINT_DIRS:
         if os.path.isdir(os.path.join(target, *epd.split("/"))):
-            entry_points.append({"path": epd, "name": epd,
-                                 "language": "unknown", "type": "directory"})
+            entry_points.append(
+                {"path": epd, "name": epd, "language": "unknown", "type": "directory"}
+            )
     return entry_points
 
 
 # ── Architecture docs ──────────────────────────────────────────────
+
 
 def locate_arch_docs(target, files):
     """Locate architecture documents and read first-line descriptions."""
@@ -312,26 +391,28 @@ def locate_arch_docs(target, files):
     by_name = {}
     for rel, full in files:
         bn = os.path.basename(rel)
-        if bn in ARCH_DOCS:
-            if bn not in by_name or "/" not in rel:
-                by_name[bn] = (rel, full)
+        if bn in ARCH_DOCS and (bn not in by_name or "/" not in rel):
+            by_name[bn] = (rel, full)
     for doc_name in ARCH_DOCS:
         if doc_name in by_name:
             rel, full = by_name[doc_name]
             desc = ""
             try:
-                first = open(full, encoding="utf-8", errors="replace").readline().strip()
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    first = fh.readline().strip()
                 desc = first.lstrip("#").strip()
             except Exception:
                 pass
             docs.append({"name": doc_name, "path": rel, "description": desc})
     if os.path.isdir(os.path.join(target, "docs")):
-        docs.append({"name": "docs/", "path": "docs",
-                     "description": "documentation directory"})
+        docs.append(
+            {"name": "docs/", "path": "docs", "description": "documentation directory"}
+        )
     return docs
 
 
 # ── Module detection & dependency analysis ─────────────────────────
+
 
 def detect_modules(files, max_depth):
     """Detect module boundaries.
@@ -355,22 +436,25 @@ def detect_modules(files, max_depth):
 def extract_imports(filepath, lang):
     """Extract import paths from a source file."""
     try:
-        source = open(filepath, encoding="utf-8", errors="replace").read()
+        with open(filepath, encoding="utf-8", errors="replace") as fh:
+            source = fh.read()
     except Exception:
         return []
     imports = []
     if lang == "Go":
         for m in re.finditer(r'^import\s+"([^"]+)"', source, re.MULTILINE):
             imports.append(m.group(1))
-        for block in re.finditer(r'^import\s*\(([^)]*)\)', source, re.MULTILINE | re.DOTALL):
+        for block in re.finditer(
+            r"^import\s*\(([^)]*)\)", source, re.MULTILINE | re.DOTALL
+        ):
             imports.extend(re.findall(r'"([^"]+)"', block.group(1)))
     elif lang == "Python":
-        for m in re.finditer(r'^\s*from\s+([\w.]+)\s+import', source, re.MULTILINE):
+        for m in re.finditer(r"^\s*from\s+([\w.]+)\s+import", source, re.MULTILINE):
             imports.append(m.group(1))
-        for m in re.finditer(r'^\s*import\s+([\w.]+)', source, re.MULTILINE):
+        for m in re.finditer(r"^\s*import\s+([\w.]+)", source, re.MULTILINE):
             imports.append(m.group(1))
     elif lang == "Rust":
-        for m in re.finditer(r'\buse\s+([\w:]+)', source):
+        for m in re.finditer(r"\buse\s+([\w:]+)", source):
             imports.append(m.group(1).replace("::", "/"))
     elif lang in ("TypeScript", "JavaScript"):
         imports.extend(re.findall(r'from\s+["\']([^"\']+)["\']', source))
@@ -378,7 +462,7 @@ def extract_imports(filepath, lang):
     elif lang in ("C", "C++"):
         imports.extend(re.findall(r'#include\s*"([^"]+)"', source))
     elif lang == "Java":
-        imports.extend(re.findall(r'import\s+([\w.]+)\s*;', source))
+        imports.extend(re.findall(r"import\s+([\w.]+)\s*;", source))
     return imports
 
 
@@ -432,12 +516,17 @@ def analyze_modules(target, files, modules):
     for m in modules:
         mname = m if m != "." else root_name
         module_info[m] = {
-            "name": mname, "path": m, "files": len(module_files[m]),
-            "fan_out": 0, "fan_in": 0, "_out": set(), "_in": set(),
+            "name": mname,
+            "path": m,
+            "files": len(module_files[m]),
+            "fan_out": 0,
+            "fan_in": 0,
+            "_out": set(),
+            "_in": set(),
         }
 
     for m in modules:
-        for rel, full, lang in module_files[m]:
+        for _rel, full, lang in module_files[m]:
             for imp in extract_imports(full, lang):
                 tgt = _resolve_import_to_module(imp, m, modules)
                 if tgt and tgt in module_info and tgt != m:
@@ -445,7 +534,7 @@ def analyze_modules(target, files, modules):
                     module_info[tgt]["_in"].add(m)
 
     result = []
-    for m, info in module_info.items():
+    for info in module_info.values():
         info["fan_out"] = len(info.pop("_out"))
         info["fan_in"] = len(info.pop("_in"))
         result.append(info)
@@ -454,6 +543,7 @@ def analyze_modules(target, files, modules):
 
 
 # ── Main scan ──────────────────────────────────────────────────────
+
 
 def scan_project(target, max_depth):
     """Run full architecture scan and return structured result."""
@@ -474,8 +564,13 @@ def scan_project(target, max_depth):
         },
         "architecture_docs": locate_arch_docs(target_abs, files),
         "modules": [
-            {"name": m["name"], "path": m["path"], "files": m["files"],
-             "fan_in": m["fan_in"], "fan_out": m["fan_out"]}
+            {
+                "name": m["name"],
+                "path": m["path"],
+                "files": m["files"],
+                "fan_in": m["fan_in"],
+                "fan_out": m["fan_out"],
+            }
             for m in module_list
         ],
         "summary": {
@@ -487,6 +582,7 @@ def scan_project(target, max_depth):
 
 
 # ── Human-readable output ──────────────────────────────────────────
+
 
 def print_tree(node, prefix="", is_last=True, counter=None):
     """Print a filtered tree view (dirs + notable files)."""
@@ -511,8 +607,13 @@ def print_tree(node, prefix="", is_last=True, counter=None):
             elif c.get("type") == "file":
                 fn = c["name"]
                 ext = Path(fn).suffix.lower()
-                if (fn in ENTRY_POINT_FILES or fn in MODULE_MARKERS
-                        or fn in BUILD_FILES or fn in ARCH_DOCS or ext in notable_exts):
+                if (
+                    fn in ENTRY_POINT_FILES
+                    or fn in MODULE_MARKERS
+                    or fn in BUILD_FILES
+                    or fn in ARCH_DOCS
+                    or ext in notable_exts
+                ):
                     shown.append(c)
         shown = shown[:30]
         new_prefix = prefix + ("    " if is_last else "│   ")
@@ -522,9 +623,9 @@ def print_tree(node, prefix="", is_last=True, counter=None):
 
 def print_human_readable(result):
     """Print a human-readable architecture overview."""
-    print(f"\n{'='*60}")
-    print(f"  arch-optimize Architecture Scan (Stage 1: Perception)")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  arch-optimize Architecture Scan (Stage 1: Perception)")
+    print(f"{'=' * 60}")
     print(f"  Target:      {result['target']}")
     print(f"  Scanned:     {result['scan_timestamp']}")
     s = result["summary"]
@@ -532,53 +633,58 @@ def print_human_readable(result):
     print(f"  Directories: {s['total_dirs']}")
     print(f"  Modules:     {s['total_modules']}")
 
-    print(f"\n  {'─'*56}")
-    print(f"  Directory Structure:")
-    print(f"  {'─'*56}")
+    print(f"\n  {'─' * 56}")
+    print("  Directory Structure:")
+    print(f"  {'─' * 56}")
     print_tree(result["directory_tree"])
 
     ts = result["tech_stack"]
-    print(f"\n  {'─'*56}")
-    print(f"  Tech Stack:")
-    print(f"  {'─'*56}")
+    print(f"\n  {'─' * 56}")
+    print("  Tech Stack:")
+    print(f"  {'─' * 56}")
     print(f"  Build system:    {ts['build_system'] or '(none detected)'}")
-    print(f"  Languages:")
+    print("  Languages:")
     for lang in ts["languages"][:8]:
-        print(f"    {lang['name']:<14} {lang['file_count']:>5} files ({lang['percentage']}%)")
+        print(
+            f"    {lang['name']:<14} {lang['file_count']:>5} files ({lang['percentage']}%)"
+        )
     if ts["frameworks"]:
         print(f"  Frameworks:      {', '.join(ts['frameworks'])}")
     if ts["test_frameworks"]:
         print(f"  Test frameworks: {', '.join(ts['test_frameworks'])}")
 
     if result["entry_points"]:
-        print(f"\n  {'─'*56}")
+        print(f"\n  {'─' * 56}")
         print(f"  Entry Points ({len(result['entry_points'])}):")
-        print(f"  {'─'*56}")
+        print(f"  {'─' * 56}")
         for ep in result["entry_points"]:
             print(f"  [{ep['type']:9s}] {ep['path']}  ({ep['language']})")
 
     if result["modules"]:
-        print(f"\n  {'─'*56}")
+        print(f"\n  {'─' * 56}")
         print(f"  Modules ({len(result['modules'])}):")
-        print(f"  {'─'*56}")
+        print(f"  {'─' * 56}")
         print(f"  {'module':<28} {'files':>5} {'fan_in':>7} {'fan_out':>8}")
         for m in result["modules"][:25]:
-            print(f"  {m['name']:<28} {m['files']:>5} {m['fan_in']:>7} {m['fan_out']:>8}")
+            print(
+                f"  {m['name']:<28} {m['files']:>5} {m['fan_in']:>7} {m['fan_out']:>8}"
+            )
         if len(result["modules"]) > 25:
             print(f"  ... and {len(result['modules']) - 25} more")
 
     if result["architecture_docs"]:
-        print(f"\n  {'─'*56}")
+        print(f"\n  {'─' * 56}")
         print(f"  Architecture Docs ({len(result['architecture_docs'])}):")
-        print(f"  {'─'*56}")
+        print(f"  {'─' * 56}")
         for d in result["architecture_docs"]:
             desc = d["description"][:40] if d["description"] else ""
             print(f"  {d['name']:<20} {d['path']:<24} {desc}")
 
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
 
 # ── CLI ────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -593,7 +699,9 @@ Examples:
     )
     parser.add_argument("--target", required=True, help="Project directory to scan")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--depth", type=int, default=5, help="Maximum scan depth (default: 5)")
+    parser.add_argument(
+        "--depth", type=int, default=5, help="Maximum scan depth (default: 5)"
+    )
 
     args = parser.parse_args()
 

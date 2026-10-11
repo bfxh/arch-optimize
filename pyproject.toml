@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "arch-optimize"
 version = "3.2.0"
-description = "Architecture optimization skill: SWE-CI evolutionary quality assessment, six decay risk scanning, and architect-programmer dual-agent collaboration"
+description = "Architecture optimization skill: six decay risk scanning (R1-R6), quality metrics, regression guarding, and architect-programmer dual-agent collaboration, via five stdlib-only scanners"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -41,3 +41,17 @@ scripts = "scripts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+# 规则集显式声明，避免 ruff 升级把默认集扩大成"突然全红"或"悄悄什么都不查"
+select = ["E4", "E7", "E9", "F", "SIM", "B", "PIE", "PLW", "UP"]
+ignore = [
+  "BLE001",  # 扫描器对任意输入都要活着跑完，宽 except 是刻意的（改它会动错误处理架构）
+  "S110",    # try/except/pass：读不到的文件跳过并计入 files_analyzed，属于设计而非吞异常
+  "S112",    # 同上，循环体内的跳过
+  "DTZ005",  # arch_scan 的 scan_timestamp 按本地时区记录，供人读不参与计算
+]
+

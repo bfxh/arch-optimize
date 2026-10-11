@@ -5,12 +5,16 @@ Calculates Maintainability Index (MI), Cyclomatic Complexity (CC),
 Halstead Volume (HV), and Health Score for source code files.
 
 Supports: Python, Go, C/C++, Rust, TypeScript/JavaScript
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 quality_metrics.py --target src/ --json
     python3 quality_metrics.py --file main.go
-    python3 quality_metrics.py --target . --threshold-critical 15 --threshold-warning 10
+    python3 quality_metrics.py --target src/ --json --min-cc 10 --quiet
+
+Note: --min-cc only filters the per-function list in JSON output; hotspots,
+average_cc and max_cc are computed before filtering, so aggregate values do
+not change with this flag.
 """
 
 import argparse
@@ -23,22 +27,33 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Language detection ──────────────────────────────────────────────
 
 LANG_EXTENSIONS = {
     ".py": "python",
     ".go": "go",
-    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
     ".rs": "rust",
-    ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
-    ".java": "java", ".kt": "kotlin",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".java": "java",
+    ".kt": "kotlin",
 }
 
 # ── LOC counter ─────────────────────────────────────────────────────
+
 
 def count_loc(filepath: str) -> dict:
     """Count physical, logical, and comment lines."""
@@ -49,7 +64,7 @@ def count_loc(filepath: str) -> dict:
     in_block_comment = False
 
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             for line in f:
                 stripped = line.strip()
                 physical += 1
@@ -61,7 +76,7 @@ def count_loc(filepath: str) -> dict:
                     if "*/" in stripped:
                         in_block_comment = False
                     continue
-                if stripped.startswith("//") or stripped.startswith("#"):
+                if stripped.startswith(("//", "#")):
                     comments += 1
                     continue
                 if stripped.startswith("/*"):
@@ -83,11 +98,12 @@ def count_loc(filepath: str) -> dict:
 
 # ── Cyclomatic Complexity ───────────────────────────────────────────
 
+
 def cc_python(filepath: str) -> list:
     """Calculate CC for each function in a Python file using ast."""
-    results = []
+    results: list = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             tree = ast.parse(f.read(), filename=filepath)
     except SyntaxError:
         return results
@@ -98,40 +114,51 @@ def cc_python(filepath: str) -> list:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             cc = 1
             for child in ast.walk(node):
-                if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor)):
-                    cc += 1
-                elif isinstance(child, ast.ExceptHandler):
+                if isinstance(
+                    child, (ast.If, ast.While, ast.For, ast.AsyncFor, ast.ExceptHandler)
+                ):
                     cc += 1
                 elif isinstance(child, ast.BoolOp):
                     cc += len(child.values) - 1
-                elif isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                elif isinstance(
+                    child,
+                    (
+                        ast.ListComp,
+                        ast.SetComp,
+                        ast.DictComp,
+                        ast.GeneratorExp,
+                        ast.Assert,
+                    ),
+                ):
                     cc += 1
-                elif isinstance(child, ast.Assert):
-                    cc += 1
-            results.append({
-                "function": node.name,
-                "line": node.lineno,
-                "cc": cc,
-                "lines": (node.end_lineno or node.lineno) - node.lineno + 1,
-            })
+            results.append(
+                {
+                    "function": node.name,
+                    "line": node.lineno,
+                    "cc": cc,
+                    "lines": (node.end_lineno or node.lineno) - node.lineno + 1,
+                }
+            )
     return results
 
 
-# Decision keywords for C-family languages
+# Decision keywords for C-family languages.
+# 注意：&&、||、? 这些标点分支必须放在 \b 组外——非词字符两侧没有词边界，
+# 放进去等于永远匹配不到。实测改前 if+7 个 && 的真值 CC=9 被算成 2。
 C_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|while|case|catch|\?\s|&&|\|\||switch)\b",
+    r"\b(?:if|else\s+if|for|while|case|catch|switch)\b|\?(?!:)|&&|\|\|",
     re.MULTILINE,
 )
 
-# Decision keywords for Go
+# Decision keywords for Go（Go 无三元，无 ? 分支）
 GO_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|switch|case|select|&&|\|\|)\b",
+    r"\b(?:if|else\s+if|for|switch|case|select)\b|&&|\|\|",
     re.MULTILINE,
 )
 
 # Decision keywords for Rust
 RUST_DECISION_RE = re.compile(
-    r"\b(if|else\s+if|for|while|loop|match|=>|&&|\|\|)\b",
+    r"\b(?:if|else\s+if|for|while|loop|match)\b|=>|&&|\|\|",
     re.MULTILINE,
 )
 
@@ -140,9 +167,18 @@ FUNC_RE = {
     "c": re.compile(r"^\w[\w\s\*]*\s+(\w+)\s*\([^;]*\)\s*\{", re.MULTILINE),
     "cpp": re.compile(r"^\w[\w\s\*<>:,]*\s+(\w+)\s*\([^;]*\)\s*\{", re.MULTILINE),
     "rust": re.compile(r"^\s*(pub\s+)?(async\s+)?fn\s+(\w+)", re.MULTILINE),
-    "typescript": re.compile(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)|^\s*(\w+)\s*\([^)]*\)\s*[:{]", re.MULTILINE),
-    "javascript": re.compile(r"^\s*(export\s+)?(async\s+)?function\s+(\w+)|^\s*(\w+)\s*\([^)]*\)\s*[:{]", re.MULTILINE),
-    "java": re.compile(r"^\s*(public|private|protected)?\s*(static)?\s*\w[\w<>\[\]]*\s+(\w+)\s*\([^;]*\)\s*\{", re.MULTILINE),
+    "typescript": re.compile(
+        r"^\s*(export\s+)?(async\s+)?function\s+(\w+)|^\s*(\w+)\s*\([^)]*\)\s*[:{]",
+        re.MULTILINE,
+    ),
+    "javascript": re.compile(
+        r"^\s*(export\s+)?(async\s+)?function\s+(\w+)|^\s*(\w+)\s*\([^)]*\)\s*[:{]",
+        re.MULTILINE,
+    ),
+    "java": re.compile(
+        r"^\s*(public|private|protected)?\s*(static)?\s*\w[\w<>\[\]]*\s+(\w+)\s*\([^;]*\)\s*\{",
+        re.MULTILINE,
+    ),
 }
 
 DECISION_RE = {
@@ -158,9 +194,9 @@ DECISION_RE = {
 
 def cc_c_family(filepath: str, lang: str) -> list:
     """Approximate CC for C/C++/Go/Rust/TS/JS/Java using regex."""
-    results = []
+    results: list = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             source = f.read()
     except Exception:
         return results
@@ -173,8 +209,9 @@ def cc_c_family(filepath: str, lang: str) -> list:
     lines = source.split("\n")
 
     for match in func_re.finditer(source):
-        func_name = match.group(match.lastindex) if match.groups() else "anonymous"
-        start_line = source[:match.start()].count("\n") + 1
+        last = match.lastindex
+        func_name = match.group(last) if last else "anonymous"
+        start_line = source[: match.start()].count("\n") + 1
 
         # Find function body extent (simple brace matching)
         brace_count = 0
@@ -193,15 +230,17 @@ def cc_c_family(filepath: str, lang: str) -> list:
             if started and brace_count == 0:
                 break
 
-        func_body = "\n".join(lines[start_line - 1:end_line])
+        func_body = "\n".join(lines[start_line - 1 : end_line])
         decisions = len(decision_re.findall(func_body))
         cc = 1 + decisions
-        results.append({
-            "function": func_name,
-            "line": start_line,
-            "cc": cc,
-            "lines": end_line - start_line + 1,
-        })
+        results.append(
+            {
+                "function": func_name,
+                "line": start_line,
+                "cc": cc,
+                "lines": end_line - start_line + 1,
+            }
+        )
     return results
 
 
@@ -231,7 +270,7 @@ OPERANDS_RE = re.compile(
 def calculate_hv(filepath: str) -> float:
     """Calculate Halstead Volume (simplified estimation)."""
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             source = f.read()
     except Exception:
         return 0.0
@@ -240,9 +279,9 @@ def calculate_hv(filepath: str) -> float:
     operands = OPERANDS_RE.findall(source)
 
     n1 = len(set(operators))  # distinct operators
-    n2 = len(set(operands))   # distinct operands
-    N1 = len(operators)       # total operators
-    N2 = len(operands)        # total operands
+    n2 = len(set(operands))  # distinct operands
+    N1 = len(operators)  # total operators
+    N2 = len(operands)  # total operands
 
     vocabulary = n1 + n2
     length = N1 + N2
@@ -254,6 +293,7 @@ def calculate_hv(filepath: str) -> float:
 
 
 # ── Maintainability Index ───────────────────────────────────────────
+
 
 def calculate_mi(hv: float, cc_avg: float, loc: int) -> float:
     """
@@ -270,15 +310,21 @@ def calculate_mi(hv: float, cc_avg: float, loc: int) -> float:
 
 # ── Health Score ────────────────────────────────────────────────────
 
-def calculate_health_score(findings: list) -> dict:
+
+def calculate_health_score(findings: list, scanned_lines: int = 0) -> dict:
     """
     Health Score = 100 - 15*Critical - 5*Warning - 1*Suggestion
+
+    score 按绝对条数扣分，只对同一范围前后可比；跨项目比较用
+    penalty_per_kloc（density 制），scanned_lines 供复算（口径：物理行数）。
+    与 risk_diagnose 的同名字段口径一致。
     """
     critical = sum(1 for f in findings if f.get("severity") == "Critical")
     warning = sum(1 for f in findings if f.get("severity") == "Warning")
     suggestion = sum(1 for f in findings if f.get("severity") == "Suggestion")
 
-    score = max(0, 100 - 15 * critical - 5 * warning - 1 * suggestion)
+    penalty = 15 * critical + 5 * warning + 1 * suggestion
+    score = max(0, 100 - penalty)
 
     if score >= 90:
         grade = "优秀"
@@ -295,12 +341,17 @@ def calculate_health_score(findings: list) -> dict:
         "critical": critical,
         "warning": warning,
         "suggestion": suggestion,
+        "scanned_lines": scanned_lines,
+        "penalty_per_kloc": (
+            round(penalty * 1000 / scanned_lines, 2) if scanned_lines > 0 else None
+        ),
     }
 
 
 # ── Main analysis ───────────────────────────────────────────────────
 
-def analyze_file(filepath: str) -> dict:
+
+def analyze_file(filepath: str) -> dict | None:
     """Analyze a single source file."""
     ext = Path(filepath).suffix.lower()
     lang = LANG_EXTENSIONS.get(ext)
@@ -321,23 +372,27 @@ def analyze_file(filepath: str) -> dict:
     hotspots = []
     for func in cc_data:
         if func["cc"] > 15:
-            hotspots.append({
-                "function": func["function"],
-                "line": func["line"],
-                "cc": func["cc"],
-                "lines": func["lines"],
-                "severity": "Critical" if func["cc"] > 15 else "Warning",
-                "issue": "R1 认知过载" if func["lines"] > 50 else "R4 偶发复杂性",
-            })
+            hotspots.append(
+                {
+                    "function": func["function"],
+                    "line": func["line"],
+                    "cc": func["cc"],
+                    "lines": func["lines"],
+                    "severity": "Critical" if func["cc"] > 15 else "Warning",
+                    "issue": "R1 认知过载" if func["lines"] > 50 else "R4 偶发复杂性",
+                }
+            )
         elif func["lines"] > 50:
-            hotspots.append({
-                "function": func["function"],
-                "line": func["line"],
-                "cc": func["cc"],
-                "lines": func["lines"],
-                "severity": "Warning",
-                "issue": "R1 认知过载 (函数>50行)",
-            })
+            hotspots.append(
+                {
+                    "function": func["function"],
+                    "line": func["line"],
+                    "cc": func["cc"],
+                    "lines": func["lines"],
+                    "severity": "Warning",
+                    "issue": "R1 认知过载 (函数>50行)",
+                }
+            )
 
     return {
         "file": filepath,
@@ -365,10 +420,22 @@ def analyze_target(target: str) -> dict:
     elif os.path.isdir(target):
         for root, dirs, files in os.walk(target):
             # Skip common ignore dirs
-            dirs[:] = [d for d in dirs if d not in {
-                ".git", "node_modules", "vendor", "__pycache__",
-                ".cache", "dist", "build", "target", ".venv",
-            }]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d
+                not in {
+                    ".git",
+                    "node_modules",
+                    "vendor",
+                    "__pycache__",
+                    ".cache",
+                    "dist",
+                    "build",
+                    "target",
+                    ".venv",
+                }
+            ]
             for fname in sorted(files):
                 fpath = os.path.join(root, fname)
                 ext = Path(fname).suffix.lower()
@@ -383,12 +450,14 @@ def analyze_target(target: str) -> dict:
     # Aggregate metrics
     all_hotspots = []
     total_loc = 0
+    total_physical = 0
     mi_values = []
     cc_values = []
 
     for r in results:
         all_hotspots.extend(r["hotspots"])
         total_loc += r["loc"]["logical"]
+        total_physical += r["loc"]["physical"]
         mi_values.append(r["maintainability_index"])
         cc_values.append(r["cyclomatic_complexity"]["average"])
 
@@ -398,14 +467,16 @@ def analyze_target(target: str) -> dict:
     # Generate findings from hotspots
     findings = []
     for hs in all_hotspots:
-        findings.append({
-            "severity": hs["severity"],
-            "issue": hs["issue"],
-            "location": f"{hs['function']}():{hs['line']}",
-            "detail": f"CC={hs['cc']}, lines={hs['lines']}",
-        })
+        findings.append(
+            {
+                "severity": hs["severity"],
+                "issue": hs["issue"],
+                "location": f"{hs['function']}():{hs['line']}",
+                "detail": f"CC={hs['cc']}, lines={hs['lines']}",
+            }
+        )
 
-    health = calculate_health_score(findings)
+    health = calculate_health_score(findings, total_physical)
 
     return {
         "target": target,
@@ -421,6 +492,7 @@ def analyze_target(target: str) -> dict:
 
 # ── CLI ─────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="arch-optimize: Quality Metrics Calculator",
@@ -435,7 +507,9 @@ Examples:
     parser.add_argument("--file", help="Analyze a single file")
     parser.add_argument("--target", help="Analyze a directory")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--min-cc", type=int, default=0, help="Only show functions with CC >= N")
+    parser.add_argument(
+        "--min-cc", type=int, default=0, help="Only show functions with CC >= N"
+    )
     parser.add_argument("--quiet", action="store_true", help="Only show summary")
 
     args = parser.parse_args()
@@ -456,19 +530,22 @@ Examples:
         if args.min_cc > 0 and "files" in result:
             for f in result["files"]:
                 f["cyclomatic_complexity"]["functions"] = [
-                    func for func in f["cyclomatic_complexity"]["functions"]
+                    func
+                    for func in f["cyclomatic_complexity"]["functions"]
                     if func["cc"] >= args.min_cc
                 ]
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         # Human-readable output
-        print(f"\n{'='*60}")
-        print(f"  arch-optimize Quality Report")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("  arch-optimize Quality Report")
+        print(f"{'=' * 60}")
         print(f"  Target:           {result['target']}")
         print(f"  Files analyzed:   {result['files_analyzed']}")
         print(f"  Total LOC:        {result['total_logical_loc']}")
-        print(f"  Average MI:       {result['average_mi']} ({'🟢' if result['average_mi'] > 20 else '🟡' if result['average_mi'] >= 10 else '🔴'})")
+        print(
+            f"  Average MI:       {result['average_mi']} ({'🟢' if result['average_mi'] > 20 else '🟡' if result['average_mi'] >= 10 else '🔴'})"
+        )
         print(f"  Average CC:       {result['average_cc']}")
         hs = result["health_score"]
         print(f"  Health Score:     {hs['score']}/100 ({hs['grade']})")
@@ -477,15 +554,17 @@ Examples:
         print(f"  Suggestion:       {hs['suggestion']}")
 
         if result["hotspots"] and not args.quiet:
-            print(f"\n  {'─'*56}")
+            print(f"\n  {'─' * 56}")
             print(f"  Hotspots ({len(result['hotspots'])}):")
-            print(f"  {'─'*56}")
+            print(f"  {'─' * 56}")
             for hs in result["hotspots"][:20]:
-                print(f"  [{hs['severity']:9s}] {hs['function']}():{hs['line']}  CC={hs['cc']}  lines={hs['lines']}  {hs['issue']}")
+                print(
+                    f"  [{hs['severity']:9s}] {hs['function']}():{hs['line']}  CC={hs['cc']}  lines={hs['lines']}  {hs['issue']}"
+                )
             if len(result["hotspots"]) > 20:
                 print(f"  ... and {len(result['hotspots']) - 20} more")
 
-        print(f"\n{'='*60}\n")
+        print(f"\n{'=' * 60}\n")
 
 
 if __name__ == "__main__":

@@ -5,14 +5,22 @@ Runs test suites, compares before/after results, and calculates
 zero-regression rate and EvoScore for evolution tracking.
 
 Supports: go test, pytest, jest, cargo test
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 regression_guard.py record --output baseline.json
     python3 regression_guard.py record --output current.json --test-cmd "go test ./... -v -json"
     python3 regression_guard.py compare --baseline baseline.json --current current.json
-    python3 regression_guard.py compare --baseline baseline.json --current current.json --json
+    python3 regression_guard.py compare --baseline baseline.json --current current.json \
+        --json --allow-removed test_removed_on_purpose
+    python3 regression_guard.py compare --baseline baseline.json --current current.json \
+        --allow-removed-file allowed_deletions.txt
     python3 regression_guard.py evoscore --history history.json --gamma 1.5
+
+Gate: `compare` exits 1 when a previously-passing test fails, or when a
+previously-passing test is absent and not listed via --allow-removed /
+--allow-removed-file (renames, deletes, skips and an emptied suite all fall in
+the second case). Deleting a test that was failing is allowed.
 """
 
 import argparse
@@ -23,11 +31,13 @@ import subprocess
 import sys
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Test command auto-detection ─────────────────────────────────────
+
 
 def detect_test_cmd(cwd: str = ".") -> str:
     """Auto-detect test command based on project files present."""
@@ -35,12 +45,14 @@ def detect_test_cmd(cwd: str = ".") -> str:
     if os.path.exists(os.path.join(cwd, "go.mod")):
         return "go test ./... -v -json"
     # Python / pytest
-    if os.path.exists(os.path.join(cwd, "pytest.ini")) or os.path.exists(os.path.join(cwd, "setup.cfg")):
+    if os.path.exists(os.path.join(cwd, "pytest.ini")) or os.path.exists(
+        os.path.join(cwd, "setup.cfg")
+    ):
         return "python -m pytest --tb=short -v"
     pyproject = os.path.join(cwd, "pyproject.toml")
     if os.path.exists(pyproject):
         try:
-            with open(pyproject, "r", encoding="utf-8", errors="replace") as f:
+            with open(pyproject, encoding="utf-8", errors="replace") as f:
                 if "[tool.pytest" in f.read():
                     return "python -m pytest --tb=short -v"
         except Exception:
@@ -49,7 +61,7 @@ def detect_test_cmd(cwd: str = ".") -> str:
     pkg_json = os.path.join(cwd, "package.json")
     if os.path.exists(pkg_json):
         try:
-            with open(pkg_json, "r", encoding="utf-8", errors="replace") as f:
+            with open(pkg_json, encoding="utf-8", errors="replace") as f:
                 pkg = json.load(f)
                 deps = {}
                 deps.update(pkg.get("dependencies", {}))
@@ -66,11 +78,12 @@ def detect_test_cmd(cwd: str = ".") -> str:
 
 # ── Test output parsers ─────────────────────────────────────────────
 
+
 def parse_go_test_json(output: str) -> dict:
     """Parse `go test -json` output. Each line is a JSON object."""
     results = {}
-    for line in output.splitlines():
-        line = line.strip()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
         if not line or not line.startswith("{"):
             continue
         try:
@@ -100,7 +113,12 @@ def parse_pytest_verbose(output: str) -> dict:
             continue
         test_name = m.group(1).strip()
         status_raw = m.group(2)
-        status_map = {"PASSED": "pass", "FAILED": "fail", "ERROR": "fail", "SKIPPED": "skip"}
+        status_map = {
+            "PASSED": "pass",
+            "FAILED": "fail",
+            "ERROR": "fail",
+            "SKIPPED": "skip",
+        }
         status = status_map.get(status_raw, "skip")
         if status == "skip":
             continue
@@ -110,7 +128,7 @@ def parse_pytest_verbose(output: str) -> dict:
 
 def parse_jest_json(output: str) -> dict:
     """Parse `jest --json` output."""
-    results = {}
+    results: dict = {}
     data = None
     try:
         data = json.loads(output)
@@ -186,6 +204,7 @@ def parse_test_output(output: str, test_cmd: str) -> dict:
 
 # ── record subcommand ───────────────────────────────────────────────
 
+
 def run_tests(test_cmd: str, cwd: str = ".") -> dict:
     """Run test command and return parsed results."""
     try:
@@ -196,6 +215,7 @@ def run_tests(test_cmd: str, cwd: str = ".") -> dict:
             capture_output=True,
             text=True,
             timeout=600,
+            check=False,  # 测试套件失败时非零退出仍要解析其输出
         )
         output = proc.stdout + "\n" + proc.stderr
     except subprocess.TimeoutExpired:
@@ -244,14 +264,25 @@ def cmd_record(args) -> int:
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
 
-    print(f"Recorded {data['total']} tests ({data['passed']} passed, {data['failed']} failed) to {args.output}")
+    print(
+        f"Recorded {data['total']} tests ({data['passed']} passed, {data['failed']} failed) to {args.output}"
+    )
     return 0
 
 
 # ── compare subcommand ─────────────────────────────────────────────
 
-def compare_results(baseline: dict, current: dict) -> dict:
-    """Compare baseline and current test results."""
+
+def compare_results(
+    baseline: dict, current: dict, allow_removed: set | None = None
+) -> dict:
+    """Compare baseline and current test results.
+
+    allow_removed: test names whose disappearance is accepted without failing
+    the hard gate (legitimate deletions, e.g. a removed feature). Anything else
+    that used to pass and is now absent counts as a failure.
+    """
+    allow_removed = set(allow_removed or ())
     base_tests = baseline.get("results", {})
     curr_tests = current.get("results", {})
 
@@ -259,6 +290,8 @@ def compare_results(baseline: dict, current: dict) -> dict:
     improvements = []
     new_tests = []
     removed_tests = []
+    removed_pass = []
+    removed_fail = []
     perf_regressions = []
 
     all_names = set(base_tests.keys()) | set(curr_tests.keys())
@@ -277,25 +310,42 @@ def compare_results(baseline: dict, current: dict) -> dict:
             if b_dur > 0 and c_dur > 0:
                 increase = (c_dur - b_dur) / b_dur
                 if increase > 0.10:
-                    perf_regressions.append({
-                        "test": name,
-                        "was_ms": b_dur,
-                        "now_ms": c_dur,
-                        "increase_pct": round(increase * 100, 1),
-                    })
+                    perf_regressions.append(
+                        {
+                            "test": name,
+                            "was_ms": b_dur,
+                            "now_ms": c_dur,
+                            "increase_pct": round(increase * 100, 1),
+                        }
+                    )
         elif c and not b:
             new_tests.append(name)
         elif b and not c:
             removed_tests.append(name)
+            if b["status"] == "pass":
+                removed_pass.append(name)
+            else:
+                removed_fail.append(name)
+
+    # 通过过的测试消失，且没被 --allow-removed 放行 => 与回归同级的硬门失败
+    unexplained_removed_pass = sorted(set(removed_pass) - allow_removed)
 
     # Zero-regression rate
     total_tasks = len(all_names)
     regression_count = len(regressions)
-    zero_reg_rate = ((total_tasks - regression_count) / total_tasks * 100) if total_tasks > 0 else 100.0
+    zero_reg_rate = (
+        ((total_tasks - regression_count) / total_tasks * 100)
+        if total_tasks > 0
+        else 100.0
+    )
 
     # Non-asymmetric scoring
-    baseline_pass = baseline.get("passed", sum(1 for r in base_tests.values() if r["status"] == "pass"))
-    new_pass = current.get("passed", sum(1 for r in curr_tests.values() if r["status"] == "pass"))
+    baseline_pass = baseline.get(
+        "passed", sum(1 for r in base_tests.values() if r["status"] == "pass")
+    )
+    new_pass = current.get(
+        "passed", sum(1 for r in curr_tests.values() if r["status"] == "pass")
+    )
     target_pass = baseline_pass + max(1, len(new_tests))
 
     if new_pass >= baseline_pass and target_pass > baseline_pass:
@@ -306,38 +356,61 @@ def compare_results(baseline: dict, current: dict) -> dict:
     total_score = improvement_score - regression_penalty * 2
 
     # Health score (soft gate): 100 - 15*Critical - 5*Warning
-    critical = regression_count
+    critical = regression_count + len(unexplained_removed_pass)
     warning = len(perf_regressions)
     health_score = max(0, 100 - 15 * critical - 5 * warning)
 
     # Gate logic
-    hard_gate_passed = regression_count == 0
+    hard_gate_passed = regression_count == 0 and not unexplained_removed_pass
     soft_gate_passed = health_score >= 70
     gate_passed = hard_gate_passed
 
-    if not hard_gate_passed:
+    if regression_count:
         gate_reason = f"{regression_count} regression(s) detected (hard gate failed)"
+    elif unexplained_removed_pass:
+        gate_reason = (
+            f"{len(unexplained_removed_pass)} previously-passing test(s) vanished "
+            f"without --allow-removed (hard gate failed): "
+            f"{', '.join(unexplained_removed_pass[:5])}"
+            + (" ..." if len(unexplained_removed_pass) > 5 else "")
+        )
     elif not soft_gate_passed:
-        gate_reason = f"Zero regression rate = {zero_reg_rate:.1f}% (soft gate: health={health_score} < 70)"
+        gate_reason = (
+            f"Zero regression rate = {zero_reg_rate:.1f}% "
+            f"(soft gate: health={health_score} < 70)"
+        )
     else:
         gate_reason = f"Zero regression rate = {zero_reg_rate:.1f}%"
 
     # Findings with severity
     findings = []
     for r in regressions:
-        findings.append({
-            "severity": "Critical",
-            "issue": "REGRESSION",
-            "test": r["test"],
-            "detail": f"{r['was']} -> {r['now']}",
-        })
+        findings.append(
+            {
+                "severity": "Critical",
+                "issue": "REGRESSION",
+                "test": r["test"],
+                "detail": f"{r['was']} -> {r['now']}",
+            }
+        )
+    for name in unexplained_removed_pass:
+        findings.append(
+            {
+                "severity": "Critical",
+                "issue": "TEST_REMOVED",
+                "test": name,
+                "detail": "was PASS, now absent (未在 --allow-removed 中放行)",
+            }
+        )
     for p in perf_regressions:
-        findings.append({
-            "severity": "Warning",
-            "issue": "PERFORMANCE_REGRESSION",
-            "test": p["test"],
-            "detail": f"{p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)",
-        })
+        findings.append(
+            {
+                "severity": "Warning",
+                "issue": "PERFORMANCE_REGRESSION",
+                "test": p["test"],
+                "detail": f"{p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)",
+            }
+        )
 
     return {
         "baseline": {
@@ -354,6 +427,9 @@ def compare_results(baseline: dict, current: dict) -> dict:
         "improvements": improvements,
         "new_tests": new_tests,
         "removed_tests": removed_tests,
+        "removed_pass": removed_pass,
+        "removed_fail": removed_fail,
+        "unexplained_removed_pass": unexplained_removed_pass,
         "performance_regressions": perf_regressions,
         "zero_regression_rate": round(zero_reg_rate, 1),
         "non_asymmetric_score": round(total_score, 4),
@@ -364,22 +440,38 @@ def compare_results(baseline: dict, current: dict) -> dict:
     }
 
 
+def load_allow_removed(args) -> set:
+    """Union of --allow-removed values and names listed in --allow-removed-file."""
+    names = set(args.allow_removed or ())
+    path = args.allow_removed_file
+    if path:
+        try:
+            with open(path, encoding="utf-8") as f:
+                names |= {
+                    ln.strip() for ln in f if ln.strip() and not ln.startswith("#")
+                }
+        except OSError as e:
+            print(f"Error reading --allow-removed-file: {e}", file=sys.stderr)
+            sys.exit(1)
+    return names
+
+
 def cmd_compare(args) -> int:
     """Compare baseline and current test results."""
     try:
-        with open(args.baseline, "r", encoding="utf-8") as f:
+        with open(args.baseline, encoding="utf-8") as f:
             baseline = json.load(f)
     except Exception as e:
         print(f"Error reading baseline: {e}", file=sys.stderr)
         return 1
     try:
-        with open(args.current, "r", encoding="utf-8") as f:
+        with open(args.current, encoding="utf-8") as f:
             current = json.load(f)
     except Exception as e:
         print(f"Error reading current: {e}", file=sys.stderr)
         return 1
 
-    result = compare_results(baseline, current)
+    result = compare_results(baseline, current, load_allow_removed(args))
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -393,49 +485,60 @@ def print_human_compare(result: dict):
     """Print human-readable comparison report."""
     b = result["baseline"]
     c = result["current"]
-    print(f"\n{'='*60}")
-    print(f"  arch-optimize Regression Guard - Comparison Report")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  arch-optimize Regression Guard - Comparison Report")
+    print(f"{'=' * 60}")
     print(f"  {'Metric':<30s} {'Baseline':>12s} {'Current':>12s}")
-    print(f"  {'-'*56}")
+    print(f"  {'-' * 56}")
     print(f"  {'Total tests':<30s} {b['total']:>12d} {c['total']:>12d}")
     print(f"  {'Passed':<30s} {b['passed']:>12d} {c['passed']:>12d}")
     print(f"  {'Failed':<30s} {b['failed']:>12d} {c['failed']:>12d}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Regressions:           {len(result['regressions'])}")
     print(f"  Improvements:          {len(result['improvements'])}")
     print(f"  New tests:             {len(result['new_tests'])}")
     print(f"  Removed tests:         {len(result['removed_tests'])}")
+    print(f"    of which were PASS:  {len(result['removed_pass'])}")
+    print(f"    unexplained (gate):  {len(result['unexplained_removed_pass'])}")
     print(f"  Perf regressions:      {len(result['performance_regressions'])}")
     print(f"  Zero-regression rate:  {result['zero_regression_rate']}%")
     print(f"  Non-asymmetric score:  {result['non_asymmetric_score']}")
     print(f"  Health score:          {result['health_score']}/100")
 
     if result["regressions"]:
-        print(f"\n  {'-'*56}")
-        print(f"  REGRESSIONS (Critical):")
+        print(f"\n  {'-' * 56}")
+        print("  REGRESSIONS (Critical):")
         for r in result["regressions"]:
             print(f"    {r['test']}: {r['was']} -> {r['now']}")
 
+    if result["unexplained_removed_pass"]:
+        print(f"\n  {'-' * 56}")
+        print("  DISAPPEARED TESTS (Critical, use --allow-removed if intended):")
+        for name in result["unexplained_removed_pass"]:
+            print(f"    {name}: PASS -> absent")
+
     if result["performance_regressions"]:
-        print(f"\n  {'-'*56}")
-        print(f"  PERFORMANCE REGRESSIONS (Warning):")
+        print(f"\n  {'-' * 56}")
+        print("  PERFORMANCE REGRESSIONS (Warning):")
         for p in result["performance_regressions"]:
-            print(f"    {p['test']}: {p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)")
+            print(
+                f"    {p['test']}: {p['was_ms']}ms -> {p['now_ms']}ms (+{p['increase_pct']}%)"
+            )
 
     if result["improvements"]:
-        print(f"\n  {'-'*56}")
-        print(f"  IMPROVEMENTS:")
+        print(f"\n  {'-' * 56}")
+        print("  IMPROVEMENTS:")
         for i in result["improvements"]:
             print(f"    {i['test']}: {i['was']} -> {i['now']}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     status = "PASSED" if result["gate_passed"] else "FAILED"
     print(f"  Gate: {status} - {result['gate_reason']}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 # ── evoscore subcommand ─────────────────────────────────────────────
+
 
 def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
     """
@@ -468,16 +571,18 @@ def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
             a_ci = (n_ci - n_c0) / denom_val if denom_val > 0 else 0.0
         else:
             a_ci = (n_ci - n_c0) / n_c0 if n_c0 > 0 else 0.0
-        weight = gamma ** i
+        weight = gamma**i
         numerator += weight * a_ci
         denominator += weight
-        iteration_scores.append({
-            "iteration": entry.get("iteration", i + 1),
-            "passed": n_ci,
-            "regressions": entry.get("regressions", 0),
-            "a_score": round(a_ci, 4),
-            "weight": round(weight, 4),
-        })
+        iteration_scores.append(
+            {
+                "iteration": entry.get("iteration", i + 1),
+                "passed": n_ci,
+                "regressions": entry.get("regressions", 0),
+                "a_score": round(a_ci, 4),
+                "weight": round(weight, 4),
+            }
+        )
 
     evoscore = numerator / denominator if denominator > 0 else 0.0
 
@@ -521,7 +626,7 @@ def calculate_evoscore(history: list, gamma: float = 1.5) -> dict:
 def cmd_evoscore(args) -> int:
     """Calculate EvoScore from history file."""
     try:
-        with open(args.history, "r", encoding="utf-8") as f:
+        with open(args.history, encoding="utf-8") as f:
             history = json.load(f)
     except Exception as e:
         print(f"Error reading history: {e}", file=sys.stderr)
@@ -536,9 +641,9 @@ def cmd_evoscore(args) -> int:
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
-        print(f"\n{'='*60}")
-        print(f"  arch-optimize EvoScore Report")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("  arch-optimize EvoScore Report")
+        print(f"{'=' * 60}")
         print(f"  Gamma:                {result['gamma']}")
         print(f"  Iterations:           {result['iterations']}")
         print(f"  Baseline passed:      {result['baseline_passed']}")
@@ -548,17 +653,22 @@ def cmd_evoscore(args) -> int:
         print(f"  Max consecutive reg.:  {result['max_consecutive_regressions']}")
         if result.get("warning"):
             print(f"  WARNING:              {result['warning']}")
-        print(f"\n  {'-'*56}")
-        print(f"  {'Iter':<6s} {'Passed':<10s} {'Regress':<10s} {'a(c)':<10s} {'Weight':<10s}")
-        print(f"  {'-'*56}")
+        print(f"\n  {'-' * 56}")
+        print(
+            f"  {'Iter':<6s} {'Passed':<10s} {'Regress':<10s} {'a(c)':<10s} {'Weight':<10s}"
+        )
+        print(f"  {'-' * 56}")
         for s in result["iteration_scores"]:
-            print(f"  {s['iteration']:<6d} {s['passed']:<10d} {s['regressions']:<10d} {s['a_score']:<10.4f} {s['weight']:<10.4f}")
-        print(f"{'='*60}\n")
+            print(
+                f"  {s['iteration']:<6d} {s['passed']:<10d} {s['regressions']:<10d} {s['a_score']:<10.4f} {s['weight']:<10.4f}"
+            )
+        print(f"{'=' * 60}\n")
 
     return 0
 
 
 # ── CLI ─────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -578,21 +688,48 @@ Examples:
     # record
     p_record = subparsers.add_parser("record", help="Record test results to JSON")
     p_record.add_argument("--output", required=True, help="Output JSON file path")
-    p_record.add_argument("--test-cmd", default=None, help="Test command to run (auto-detected if omitted)")
-    p_record.add_argument("--cwd", default=".", help="Working directory for test command")
+    p_record.add_argument(
+        "--test-cmd",
+        default=None,
+        help="Test command to run (auto-detected if omitted)",
+    )
+    p_record.add_argument(
+        "--cwd", default=".", help="Working directory for test command"
+    )
     p_record.set_defaults(func=cmd_record)
 
     # compare
-    p_compare = subparsers.add_parser("compare", help="Compare baseline vs current test results")
+    p_compare = subparsers.add_parser(
+        "compare", help="Compare baseline vs current test results"
+    )
     p_compare.add_argument("--baseline", required=True, help="Baseline JSON file")
     p_compare.add_argument("--current", required=True, help="Current JSON file")
     p_compare.add_argument("--json", action="store_true", help="Output as JSON")
+    p_compare.add_argument(
+        "--allow-removed",
+        action="append",
+        default=[],
+        metavar="TEST_NAME",
+        help="Accept this test's disappearance without failing the gate "
+        "(repeatable). Use only for tests deleted on purpose.",
+    )
+    p_compare.add_argument(
+        "--allow-removed-file",
+        metavar="PATH",
+        help="File of test names to accept as deleted (one per line, # comments)",
+    )
     p_compare.set_defaults(func=cmd_compare)
 
     # evoscore
-    p_evoscore = subparsers.add_parser("evoscore", help="Calculate EvoScore from history")
-    p_evoscore.add_argument("--history", required=True, help="History JSON file (array of iterations)")
-    p_evoscore.add_argument("--gamma", type=float, default=1.5, help="Discount factor (default: 1.5)")
+    p_evoscore = subparsers.add_parser(
+        "evoscore", help="Calculate EvoScore from history"
+    )
+    p_evoscore.add_argument(
+        "--history", required=True, help="History JSON file (array of iterations)"
+    )
+    p_evoscore.add_argument(
+        "--gamma", type=float, default=1.5, help="Discount factor (default: 1.5)"
+    )
     p_evoscore.add_argument("--json", action="store_true", help="Output as JSON")
     p_evoscore.set_defaults(func=cmd_evoscore)
 

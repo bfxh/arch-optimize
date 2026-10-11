@@ -5,7 +5,7 @@ Generates Mermaid/Graphviz dependency graphs from source code imports.
 Detects circular dependencies and calculates fan-in/fan-out metrics.
 
 Supports: Python, Go, C/C++, Rust, TypeScript/JavaScript
-Dependencies: Python 3.8+ stdlib only
+Dependencies: Python 3.10+ stdlib only (CI-tested 3.10 / 3.13)
 
 Usage:
     python3 dep_graph.py --target src/ --format mermaid
@@ -23,54 +23,100 @@ import sys
 from pathlib import Path
 
 # Windows GBK 控制台下保证中文/Unicode 输出不乱码
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="replace")
 
 # ── Language detection ──────────────────────────────────────────────
 
 LANG_EXTENSIONS = {
     ".py": "python",
     ".go": "go",
-    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
     ".rs": "rust",
-    ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
 }
 
 IGNORE_DIRS = {
-    ".git", "node_modules", "vendor", "__pycache__", ".cache",
-    "dist", "build", "target", ".venv", "venv", "env",
-    ".idea", ".vscode", "coverage", ".next", ".nuxt",
+    ".git",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".venv",
+    "venv",
+    "env",
+    ".idea",
+    ".vscode",
+    "coverage",
+    ".next",
+    ".nuxt",
 }
 
 LAYER_KEYWORDS = {
     "domain": {"domain", "model", "entity", "models", "entities"},
     "application": {"application", "service", "services", "usecase", "usecases", "app"},
-    "infrastructure": {"infrastructure", "infra", "repository", "repositories",
-                       "db", "database", "persistence", "store", "storage"},
-    "presentation": {"presentation", "api", "controller", "controllers",
-                     "handler", "handlers", "web", "ui", "view", "views",
-                     "router", "routers", "endpoint", "endpoints"},
+    "infrastructure": {
+        "infrastructure",
+        "infra",
+        "repository",
+        "repositories",
+        "db",
+        "database",
+        "persistence",
+        "store",
+        "storage",
+    },
+    "presentation": {
+        "presentation",
+        "api",
+        "controller",
+        "controllers",
+        "handler",
+        "handlers",
+        "web",
+        "ui",
+        "view",
+        "views",
+        "router",
+        "routers",
+        "endpoint",
+        "endpoints",
+    },
 }
 
 # ── Regex patterns ──────────────────────────────────────────────────
 
 GO_IMPORT_SINGLE_RE = re.compile(r'^import\s+"([^"]+)"', re.MULTILINE)
-GO_IMPORT_BLOCK_RE = re.compile(r'import\s*\(\s*(.*?)\s*\)', re.DOTALL)
+GO_IMPORT_BLOCK_RE = re.compile(r"import\s*\(\s*(.*?)\s*\)", re.DOTALL)
 GO_IMPORT_LINE_RE = re.compile(r'"([^"]+)"')
 C_INCLUDE_LOCAL_RE = re.compile(r'#include\s*"([^"]+)"')
-RUST_USE_RE = re.compile(r'^\s*(pub\s+)?use\s+([\w:]+)', re.MULTILINE)
-RUST_MOD_RE = re.compile(r'^\s*(pub\s+)?mod\s+(\w+)', re.MULTILINE)
+RUST_USE_RE = re.compile(r"^\s*(pub\s+)?use\s+([\w:]+)", re.MULTILINE)
+RUST_MOD_RE = re.compile(r"^\s*(pub\s+)?mod\s+(\w+)", re.MULTILINE)
 TS_IMPORT_RE = re.compile(
-    r'(?:import\s+[^;]*?\s+from\s+|import\s+|require\s*\(\s*)["\']([^"\']+)["\']')
+    r'(?:import\s+[^;]*?\s+from\s+|import\s+|require\s*\(\s*)["\']([^"\']+)["\']'
+)
 
 # ── Import parsers ──────────────────────────────────────────────────
 
+
 def parse_python_imports(filepath: str, target: str) -> list:
     """Parse Python imports using ast, returning top-level module names."""
-    imports = []
+    imports: list = []
     try:
-        with open(filepath, "r", encoding="utf-8-sig", errors="replace") as f:
+        with open(filepath, encoding="utf-8-sig", errors="replace") as f:
             tree = ast.parse(f.read(), filename=filepath)
     except Exception:
         return imports
@@ -99,8 +145,8 @@ def parse_go_imports(source: str) -> list:
     """Parse Go import statements, returning import paths."""
     imports = [m.group(1) for m in GO_IMPORT_SINGLE_RE.finditer(source)]
     for block in GO_IMPORT_BLOCK_RE.finditer(source):
-        for line in block.group(1).split("\n"):
-            line = line.strip()
+        for raw_line in block.group(1).split("\n"):
+            line = raw_line.strip()
             if line and not line.startswith("//"):
                 m = GO_IMPORT_LINE_RE.search(line)
                 if m:
@@ -128,8 +174,7 @@ def parse_ts_js_imports(source: str, filepath: str, target: str) -> list:
     for m in TS_IMPORT_RE.finditer(source):
         path = m.group(1)
         if path.startswith("."):
-            resolved = os.path.normpath(
-                os.path.join(os.path.dirname(filepath), path))
+            resolved = os.path.normpath(os.path.join(os.path.dirname(filepath), path))
             try:
                 rel = os.path.relpath(resolved, target)
             except ValueError:
@@ -148,13 +193,14 @@ def parse_ts_js_imports(source: str, filepath: str, target: str) -> list:
 
 # ── Module resolution ───────────────────────────────────────────────
 
+
 def file_to_module(filepath: str, target: str) -> str:
     """Map a file path to its top-level module name."""
     parts = Path(os.path.relpath(filepath, target)).parts
     return Path(parts[0]).stem if len(parts) == 1 else parts[0]
 
 
-def detect_layer(name: str) -> str:
+def detect_layer(name: str) -> str | None:
     """Detect the architectural layer of a module by name."""
     lower = name.lower()
     for layer, keywords in LAYER_KEYWORDS.items():
@@ -163,14 +209,15 @@ def detect_layer(name: str) -> str:
     return None
 
 
-def find_go_module_path(target: str) -> str:
+def find_go_module_path(target: str) -> str | None:
     """Find the Go module path from go.mod if present."""
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         if "go.mod" in files:
             try:
-                with open(os.path.join(root, "go.mod"), "r",
-                          encoding="utf-8-sig", errors="replace") as f:
+                with open(
+                    os.path.join(root, "go.mod"), encoding="utf-8-sig", errors="replace"
+                ) as f:
                     for line in f:
                         if line.strip().startswith("module "):
                             return line.strip().split()[1]
@@ -179,7 +226,9 @@ def find_go_module_path(target: str) -> str:
     return None
 
 
-def map_go_import(import_path: str, module_path: str, local_dirs: set) -> str:
+def map_go_import(
+    import_path: str, module_path: str | None, local_dirs: set
+) -> str | None:
     """Map a Go import path to a module name, or None if external."""
     first = import_path.split("/")[0]
     if "." not in first:
@@ -188,7 +237,7 @@ def map_go_import(import_path: str, module_path: str, local_dirs: set) -> str:
         if import_path == module_path:
             return None
         if import_path.startswith(module_path + "/"):
-            return import_path[len(module_path) + 1:].split("/")[0]
+            return import_path[len(module_path) + 1 :].split("/")[0]
     for seg in import_path.split("/"):
         if seg in local_dirs:
             return seg
@@ -197,10 +246,12 @@ def map_go_import(import_path: str, module_path: str, local_dirs: set) -> str:
 
 # ── Graph construction ──────────────────────────────────────────────
 
+
 def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
     """Build a dependency graph from source files under target."""
     target = os.path.abspath(target)
-    adj, modules = {}, {}
+    adj: dict = {}
+    modules: dict = {}
     go_module_path = find_go_module_path(target)
     local_go_dirs = set()
 
@@ -208,10 +259,9 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
     file_list = []
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
-        if max_depth > 0:
-            if len(Path(root).relative_to(target).parts) > max_depth:
-                dirs[:] = []
-                continue
+        if max_depth > 0 and len(Path(root).relative_to(target).parts) > max_depth:
+            dirs[:] = []
+            continue
         for fname in sorted(files):
             ext = Path(fname).suffix.lower()
             if ext not in LANG_EXTENSIONS:
@@ -234,7 +284,7 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
         lang = LANG_EXTENSIONS[ext]
         src_mod = file_to_module(fpath, target)
         try:
-            with open(fpath, "r", encoding="utf-8-sig", errors="replace") as f:
+            with open(fpath, encoding="utf-8-sig", errors="replace") as f:
                 source = f.read()
         except Exception:
             continue
@@ -269,6 +319,7 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
 
 
 # ── Cycle detection (Tarjan's SCC) ──────────────────────────────────
+
 
 def find_sccs(nodes: list, adj: dict) -> list:
     """Find strongly connected components using Tarjan's algorithm."""
@@ -305,7 +356,7 @@ def find_sccs(nodes: list, adj: dict) -> list:
     return sccs
 
 
-def extract_cycle(scc: list, adj: dict) -> list:
+def extract_cycle(scc: list, adj: dict) -> list | None:
     """Extract a representative cycle path from an SCC."""
     scc_set = set(scc)
     if len(scc) == 1:
@@ -320,7 +371,7 @@ def extract_cycle(scc: list, adj: dict) -> list:
             if w not in scc_set:
                 continue
             if w in path:
-                return path[path.index(w):] + [w]
+                return path[path.index(w) :] + [w]
             if w not in visited:
                 result = dfs(w)
                 if result:
@@ -333,16 +384,19 @@ def extract_cycle(scc: list, adj: dict) -> list:
 
 # ── Metrics & output generation ─────────────────────────────────────
 
+
 def sanitize_id(name: str) -> str:
     """Sanitize a module name for use as a graph node identifier."""
     return re.sub(r"[^\w]", "_", name)
 
 
-def generate_mermaid(modules: dict, adj: dict, scc_map: dict,
-                     scc_size: dict, cycles: list) -> str:
+def generate_mermaid(
+    modules: dict, adj: dict, scc_map: dict, scc_size: dict, cycles: list
+) -> str:
     """Generate a Mermaid graph string."""
     lines = ["graph TD"]
-    by_layer, unlayered = {}, []
+    by_layer: dict = {}
+    unlayered: list = []
     for name in sorted(modules):
         layer = modules[name].get("layer")
         if layer:
@@ -359,9 +413,11 @@ def generate_mermaid(modules: dict, adj: dict, scc_map: dict,
         lines.append(f"    {sanitize_id(name)}")
     for src in sorted(adj):
         for dst in sorted(adj[src]):
-            is_circ = (scc_map.get(src) is not None
-                       and scc_map.get(src) == scc_map.get(dst)
-                       and scc_size.get(scc_map[src], 0) > 1)
+            is_circ = (
+                scc_map.get(src) is not None
+                and scc_map.get(src) == scc_map.get(dst)
+                and scc_size.get(scc_map[src], 0) > 1
+            )
             arrow = "-.->" if is_circ else "-->"
             lines.append(f"    {sanitize_id(src)} {arrow} {sanitize_id(dst)}")
     for cycle in cycles:
@@ -371,16 +427,17 @@ def generate_mermaid(modules: dict, adj: dict, scc_map: dict,
 
 def generate_dot(modules: dict, adj: dict, scc_map: dict, scc_size: dict) -> str:
     """Generate a Graphviz DOT graph string."""
-    lines = ["digraph dependencies {", "    rankdir=LR;",
-             "    node [shape=box];", ""]
+    lines = ["digraph dependencies {", "    rankdir=LR;", "    node [shape=box];", ""]
     for name in sorted(modules):
         lines.append(f'    {sanitize_id(name)} [label="{name}"];')
     lines.append("")
     for src in sorted(adj):
         for dst in sorted(adj[src]):
-            is_circ = (scc_map.get(src) is not None
-                       and scc_map.get(src) == scc_map.get(dst)
-                       and scc_size.get(scc_map[src], 0) > 1)
+            is_circ = (
+                scc_map.get(src) is not None
+                and scc_map.get(src) == scc_map.get(dst)
+                and scc_size.get(scc_map[src], 0) > 1
+            )
             suffix = " [style=dashed]" if is_circ else ""
             lines.append(f"    {sanitize_id(src)} -> {sanitize_id(dst)}{suffix};")
     lines.append("}")
@@ -391,7 +448,7 @@ def build_result(target: str, modules: dict, adj: dict) -> dict:
     """Build the complete result dictionary with all graph data."""
     fan_in = {m: 0 for m in modules}
     fan_out = {m: len(adj.get(m, set())) for m in modules}
-    for src, deps in adj.items():
+    for deps in adj.values():
         for dst in deps:
             if dst in fan_in:
                 fan_in[dst] += 1
@@ -412,19 +469,25 @@ def build_result(target: str, modules: dict, adj: dict) -> dict:
     edges = []
     for src in sorted(adj):
         for dst in sorted(adj[src]):
-            is_circ = (scc_map.get(src) is not None
-                       and scc_map.get(src) == scc_map.get(dst)
-                       and scc_size.get(scc_map[src], 0) > 1)
-            edges.append({"from": src, "to": dst,
-                          "type": "circular" if is_circ else "normal"})
+            is_circ = (
+                scc_map.get(src) is not None
+                and scc_map.get(src) == scc_map.get(dst)
+                and scc_size.get(scc_map[src], 0) > 1
+            )
+            edges.append(
+                {"from": src, "to": dst, "type": "circular" if is_circ else "normal"}
+            )
 
-    module_list = [{
-        "name": name,
-        "fan_in": fan_in.get(name, 0),
-        "fan_out": fan_out.get(name, 0),
-        "layer": modules[name].get("layer"),
-        "files": modules[name].get("files", 0),
-    } for name in sorted(modules)]
+    module_list = [
+        {
+            "name": name,
+            "fan_in": fan_in.get(name, 0),
+            "fan_out": fan_out.get(name, 0),
+            "layer": modules[name].get("layer"),
+            "files": modules[name].get("files", 0),
+        }
+        for name in sorted(modules)
+    ]
 
     return {
         "target": target,
@@ -437,6 +500,7 @@ def build_result(target: str, modules: dict, adj: dict) -> dict:
 
 
 # ── CLI ─────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -453,10 +517,18 @@ Examples:
     parser.add_argument("--target", required=True, help="Source directory to analyze")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--output", help="Write output to file (.md, .gv, .dot, .json)")
-    parser.add_argument("--format", choices=["mermaid", "dot"], default="mermaid",
-                        help="Graph format (default: mermaid)")
-    parser.add_argument("--max-depth", type=int, default=0,
-                        help="Maximum directory depth to scan (0 = unlimited)")
+    parser.add_argument(
+        "--format",
+        choices=["mermaid", "dot"],
+        default="mermaid",
+        help="Graph format (default: mermaid)",
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=0,
+        help="Maximum directory depth to scan (0 = unlimited)",
+    )
 
     args = parser.parse_args()
 
@@ -483,37 +555,37 @@ Examples:
         return
 
     # Human-readable output
-    print(f"\n{'='*60}")
-    print(f"  arch-optimize Dependency Graph")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  arch-optimize Dependency Graph")
+    print(f"{'=' * 60}")
     print(f"  Target:              {result['target']}")
     print(f"  Modules:             {len(result['modules'])}")
     print(f"  Edges:               {len(result['edges'])}")
     print(f"  Circular deps:       {len(result['circular_deps'])}")
 
-    print(f"\n  {'─'*56}")
-    print(f"  Modules (fan-in / fan-out):")
-    print(f"  {'─'*56}")
+    print(f"\n  {'─' * 56}")
+    print("  Modules (fan-in / fan-out):")
+    print(f"  {'─' * 56}")
     for m in result["modules"]:
         layer = f" [{m['layer']}]" if m["layer"] else ""
         print(f"  {m['name']:30s}  in={m['fan_in']:3d}  out={m['fan_out']:3d}{layer}")
 
-    print(f"\n  {'─'*56}")
+    print(f"\n  {'─' * 56}")
     print(f"  {args.format.upper()} Graph:")
-    print(f"  {'─'*56}")
+    print(f"  {'─' * 56}")
     print(f"  ```{args.format}")
     for line in graph_str.split("\n"):
         print(f"  {line}")
-    print(f"  ```")
+    print("  ```")
 
     if result["circular_deps"]:
-        print(f"\n  {'─'*56}")
+        print(f"\n  {'─' * 56}")
         print(f"  Circular Dependencies ({len(result['circular_deps'])}):")
-        print(f"  {'─'*56}")
+        print(f"  {'─' * 56}")
         for i, cycle in enumerate(result["circular_deps"], 1):
             print(f"  {i}. {' -> '.join(cycle)}")
 
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
     # Write to file
     if args.output:
