@@ -1321,12 +1321,19 @@ def _finding(risk, severity, location, symptom, source, consequence, remedy):
     }
 
 
-def compute_health_impact(findings):
-    """Health score impact following the 100 - 15*C - 5*W - 1*S formula."""
+def compute_health_impact(findings, scanned_lines=0):
+    """Health score impact following the 100 - 15*C - 5*W - 1*S formula.
+
+    score 按绝对条数扣分，只对"同一范围、同一口径"前后可比（1 个文件 85 分 vs
+    20 份相同内容 0 分）。跨项目/跨规模比较用 penalty_per_kloc（密度制：
+    原始 penalty 按 K 归一），scanned_lines 供复算（口径：物理行数）。
+    scanned_lines 为 0 时 penalty_per_kloc 为 None。
+    """
     c = sum(1 for f in findings if f["severity"] == "Critical")
     w = sum(1 for f in findings if f["severity"] == "Warning")
     s = sum(1 for f in findings if f["severity"] == "Suggestion")
-    score = max(0, 100 - 15 * c - 5 * w - 1 * s)
+    penalty = 15 * c + 5 * w + 1 * s
+    score = max(0, 100 - penalty)
     if score >= 90:
         grade = "优秀"
     elif score >= 70:
@@ -1341,6 +1348,10 @@ def compute_health_impact(findings):
         "critical": c,
         "warning": w,
         "suggestion": s,
+        "scanned_lines": scanned_lines,
+        "penalty_per_kloc": (
+            round(penalty * 1000 / scanned_lines, 2) if scanned_lines > 0 else None
+        ),
     }
 
 
@@ -1395,7 +1406,8 @@ def diagnose(target, risks, min_severity):
         key=lambda f: (f["risk"], -SEVERITY_RANK[f["severity"]], f["location"])
     )
 
-    health = compute_health_impact(all_findings)
+    total_lines = sum(len(src.splitlines()) for _fp, _lang, src, _rel in files_data)
+    health = compute_health_impact(all_findings, total_lines)
     grouped = defaultdict(list)
     for f in all_findings:
         grouped[f["risk"]].append(f)

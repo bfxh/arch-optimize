@@ -239,6 +239,81 @@ def _load_json(path):
         return json.load(fh)
 
 
+def _check_health_density_fields():
+    """B 方案：score 保留，另加 scanned_lines + penalty_per_kloc（密度制）。
+
+    实测的两处 score 盲区（也是密度字段存在的理由）：
+    - 饱和：risk_diagnose 扫 8 个长函数文件（58 Critical）与 80 个（130 Critical）
+      score 都是 0，量不出债务量级；
+    - 同分不同债：score 只在同范围前后比较有效。
+    密度侧：quality_metrics 纯复制下密度不变（实测 8 份与 80 份同为 79.37，
+    每文件 5 Warning / 63 行，比值恒定），可跨项目比较。
+    """
+    root = tempfile.mkdtemp(prefix="arch-opt-dens-")
+    # 每文件一个 63 行的长函数 -> quality_metrics 记 1 个 Warning 热点
+    long_fn = (
+        "def heavy(a):\n"
+        "    v = 0\n" + "".join(f"    v += {i}\n" for i in range(60)) + "    return v\n"
+    )
+
+    def build(n):
+        target = os.path.join(root, f"n{n}")
+        for i in range(n):
+            path = os.path.join(target, f"mod{i}", "x.py")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(long_fn)
+        return target
+
+    def health(target, script):
+        data = run_script(script, "--target", target, "--json")
+        return data["health_score"], target
+
+    try:
+        h8_rd, t8 = health(build(8), "risk_diagnose.py")
+        h80_rd, t80 = health(build(80), "risk_diagnose.py")
+        h8_qm, _ = health(os.path.join(root, "n8"), "quality_metrics.py")
+        h80_qm, _ = health(os.path.join(root, "n80"), "quality_metrics.py")
+
+        for tag, h in (
+            ("rd/8", h8_rd),
+            ("rd/80", h80_rd),
+            ("qm/8", h8_qm),
+            ("qm/80", h80_qm),
+        ):
+            assert "scanned_lines" in h and "penalty_per_kloc" in h, (
+                f"{tag} 缺密度字段：{sorted(h)}"
+            )
+            # 公式可复算：penalty = 15C+5W+1S，密度 = penalty*1000/lines
+            penalty = 15 * h["critical"] + 5 * h["warning"] + 1 * h["suggestion"]
+            expected = round(penalty * 1000 / h["scanned_lines"], 2)
+            assert h["penalty_per_kloc"] == expected, (
+                f"{tag} penalty_per_kloc 不可复算：得到 {h['penalty_per_kloc']}，"
+                f"按公式应为 {expected}"
+            )
+
+        # 盲区1：score 在 0 处饱和，密度字段恢复量级信息
+        assert h8_rd["score"] == h80_rd["score"] == 0, (
+            f"饱和前提变了：rd 8/80 分数 {h8_rd['score']}/{h80_rd['score']}"
+        )
+        assert h8_rd["critical"] != h80_rd["critical"], (
+            "两个饱和分数背后的 Critical 数应不同（盲区演示失效）"
+        )
+        # 盲区2：纯复制下 quality_metrics 密度稳定、score 不稳定
+        assert h8_qm["penalty_per_kloc"] == h80_qm["penalty_per_kloc"], (
+            f"纯复制下密度应不变：{h8_qm['penalty_per_kloc']} vs "
+            f"{h80_qm['penalty_per_kloc']}"
+        )
+        assert h8_qm["score"] != h80_qm["score"], (
+            "纯复制下 score 应因绝对条数累积而变化（这才是它不抗规模的证据）"
+        )
+        # scanned_lines 口径 = 物理行数（每文件 63 行）
+        assert h8_rd["scanned_lines"] == 8 * 63, h8_rd["scanned_lines"]
+        assert h80_rd["scanned_lines"] == 80 * 63, h80_rd["scanned_lines"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_r6_anemic_detector():
     """R6 贫血判据：访问器-only 判 Warning，纯字段判 Suggestion，有行为/DTO/Service 不报。
 
@@ -730,6 +805,7 @@ def test_smoke(tmp_path=None):
         _check_r3_cross_context_duplication()
         _check_r5_infra_word_boundary()
         _check_cc_counts_boolean_operators()
+        _check_health_density_fields()
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()

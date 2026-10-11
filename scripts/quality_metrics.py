@@ -311,15 +311,20 @@ def calculate_mi(hv: float, cc_avg: float, loc: int) -> float:
 # ── Health Score ────────────────────────────────────────────────────
 
 
-def calculate_health_score(findings: list) -> dict:
+def calculate_health_score(findings: list, scanned_lines: int = 0) -> dict:
     """
     Health Score = 100 - 15*Critical - 5*Warning - 1*Suggestion
+
+    score 按绝对条数扣分，只对同一范围前后可比；跨项目比较用
+    penalty_per_kloc（density 制），scanned_lines 供复算（口径：物理行数）。
+    与 risk_diagnose 的同名字段口径一致。
     """
     critical = sum(1 for f in findings if f.get("severity") == "Critical")
     warning = sum(1 for f in findings if f.get("severity") == "Warning")
     suggestion = sum(1 for f in findings if f.get("severity") == "Suggestion")
 
-    score = max(0, 100 - 15 * critical - 5 * warning - 1 * suggestion)
+    penalty = 15 * critical + 5 * warning + 1 * suggestion
+    score = max(0, 100 - penalty)
 
     if score >= 90:
         grade = "优秀"
@@ -336,6 +341,10 @@ def calculate_health_score(findings: list) -> dict:
         "critical": critical,
         "warning": warning,
         "suggestion": suggestion,
+        "scanned_lines": scanned_lines,
+        "penalty_per_kloc": (
+            round(penalty * 1000 / scanned_lines, 2) if scanned_lines > 0 else None
+        ),
     }
 
 
@@ -441,12 +450,14 @@ def analyze_target(target: str) -> dict:
     # Aggregate metrics
     all_hotspots = []
     total_loc = 0
+    total_physical = 0
     mi_values = []
     cc_values = []
 
     for r in results:
         all_hotspots.extend(r["hotspots"])
         total_loc += r["loc"]["logical"]
+        total_physical += r["loc"]["physical"]
         mi_values.append(r["maintainability_index"])
         cc_values.append(r["cyclomatic_complexity"]["average"])
 
@@ -465,7 +476,7 @@ def analyze_target(target: str) -> dict:
             }
         )
 
-    health = calculate_health_score(findings)
+    health = calculate_health_score(findings, total_physical)
 
     return {
         "target": target,
