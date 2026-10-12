@@ -69,9 +69,9 @@ python scripts/risk_diagnose.py --target <项目> --json
 | 编号 | 风险 | 概念定义 | 脚本实际判据（代码为准） | 脚本量不到的部分 |
 |------|------|----------|--------------------------|------------------|
 | R1 | 认知过载 | 理解成本 | 函数 >50 行 / 嵌套 >5 层 / CC >15 = Critical；20–50 行、4–5 层 = Warning；参数 >4 = Warning | 语义密度、命名是否揭示意图 |
-| R2 | 变更传播 | 改一处波及多处 | 单文件 import 扇出：>7 = Critical，≥5 = Warning | 真实"变更触及 N 文件"需 git 共变历史，脚本未实现 |
+| R2 | 变更传播 | 改一处波及多处 | 单文件**去重后的顶层依赖数**：>7 = Critical，≥5 = Warning（Python 把 `pkg.a`/`pkg.b` 折叠成 `pkg`，实测同一包 8 条兄弟模块 import 只算 1 个依赖、0 条发现；stdlib 与自身包名不计入） | 真实"变更触及 N 文件"需 git 共变历史，脚本未实现 |
 | R3 | 知识重复 | 同一决策多处表达 | 8-gram Jaccard ≥0.6 Warning / ≥0.8 Critical；**跨上下文的一律降 Warning 并标明两上下文名**，同上下文按原阈值；≥2 位数字面量重复 ≥3 次且跨 ≥2 文件 = Critical | 纯词汇层面分不出"通用脚手架"与"领域词"，跨上下文报的是可能而非定论 |
-| R4 | 偶发复杂性 | 比问题本身更复杂 | CC >20 = Critical（路径含算法关键词降 Warning）；同文件内仅一个实现的抽象类/接口/工厂 = Warning | 跨文件的实现计数；"这个抽象是否必要" |
+| R4 | 偶发复杂性 | 比问题本身更复杂 | CC >20 = Critical（路径含算法关键词降 Warning）；**同文件内**仅一个实现的抽象类/接口/工厂 = Warning，其中"抽象"只认基类名含 `ABC`/`Protocol`/`Abstract*`（`class Base:` + `raise NotImplementedError` 这种 duck-typed 接口不认，实测 0 条） | 跨文件的实现计数；"这个抽象是否必要" |
 | R5 | 依赖失序 | 依赖方向一致 | 文件级循环依赖 = Critical；领域层 import 命中 infra 标记（**词边界匹配**，`_`/`-`/`.` 视作边界）= Critical；内层(rank≥2)依赖外层 = Critical | 相对导入 `from . import x` 不建边，包内环检不出；复合名（如 `sqlalchemy`）须在标记表显式登记才认得出 |
 | R6 | 领域模型扭曲 | 代码忠实表达问题 | 目录名命中通用技术词 = Warning；跨上下文关键词泄漏 = Warning；Python 类"公开面全是访问器" = Warning、"只有字段无任何方法" = Suggestion | `@dataclass` 纯字段类只给 Suggestion（值对象也长这样）；跨语言不判 |
 
@@ -157,7 +157,9 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 
 已知接口差异：`--min-cc` 只过滤 JSON 里的函数清单，不过滤 `hotspots` 与 `average_cc/max_cc`，所以带不带该参数报告的聚合值口径不同；`evoscore` 需要外部历史数组（字段 `iteration/passed/target/regressions`），本仓无生成器，`record` 也不产出它，属于手工维护的可选功能。
 
-四个扫描脚本的语言表与忽略目录表**并不相同**（`.java/.kt` 只有 `arch_scan` 和 `quality_metrics` 认；`venv`/`testdata`/`env` 各脚本过滤与否不一致），同一个 `--target` 下各阶段看到的可能不是同一批文件，`files_analyzed` 必须逐阶段核对再比结论。
+四个扫描脚本的**忽略目录表现在是同一张**（17 项：`.git/node_modules/vendor/__pycache__/.cache/dist/build/target/.venv/venv/env/testdata/.idea/.vscode/.next/.nuxt/coverage`），由 `_check_ignore_dirs_identical` 逐字钉住；改前四张表各不同（`venv`/`env`/`testdata` 有的过滤有的不过滤，`quality_metrics` 连 `venv` 都不过滤，实测同一 fixture 上它把 3 个第三方目录的文件算进分析集：4 个文件 vs 现在 1 个）。
+
+**语言表仍有意的差异，只剩一条**：`.java/.kt` 只被 `arch_scan` 与 `quality_metrics` 收录，`dep_graph`/`risk_diagnose` 不认（它们没有对应判据）。所以 JVM 项目的依赖图与 R1-R6 会静默少文件——`files_analyzed` 必须逐阶段核对再比结论。这条差异由 `_check_language_tables` 钉成"只允许差这一条"。
 
 全部 Python 3.10+ 标准库零依赖（CI 矩阵实测 3.10 / 3.12 / 3.13），输出结构化 JSON，Windows 下自动强制 UTF-8 输出。
 
@@ -169,7 +171,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 2. **R5 看不见包内循环**：`from . import x` 不建依赖边；同一组文件改成绝对导入才报得出环。判"无循环"前先看项目的导入风格。
 3. **R5 的基础设施判定是词边界匹配，不是子串**：`costs`/`post`/`host`/`netlog` 不会再被判成"领域层依赖基础设施"（改前 6 个非基础设施名里 4 个误报 Critical，实测已归零）。代价是**长名字须显式登记**：`sqlalchemy` 这类现在靠标记表里显式那条才认得，如果你的项目用了别的 DB 驱动（如 `mysql`/`aiomysql`），它不会自动命中——需要时直接往 `INFRA_MARKERS` 加一行。
 4. **R3 的跨上下文条目是"可能"不是"定论"**：同一份代码放同目录出 Critical、放不同目录出 Warning（都报了，严重度分层）。跨上下文那档脚本分不出"复制粘贴的同一决策"与"各模块独立演化的相似 util"——remedy 里会让你二选一，别直接照搬。另一个未修的刷屏源：每个不同的数字面量各出一条 Critical。
-5. **R4 按单文件数实现**：抽象类与其唯一实现分处两文件（常见布局）检不出；同文件 `interface + class` 的惯用写法必报。
+5. **R4 按单文件数实现，且只认命名**：抽象类与其唯一实现分处两文件（常见布局）检不出；同文件 `interface + class` 的惯用写法必报；判"是不是抽象"用的是基类名里有没有 `ABC`/`Protocol`/`Abstract*`，所以 `class Base:` + `raise NotImplementedError` 这种 duck-typed 接口**不报**（实测 0 条，这条窄口径由 `_check_r4_abstraction_fires` 反向钉住——放宽判据会让测试判红，逼着同步改文档）。
 6. **R6 的贫血判据只覆盖 Python，且分两档**："公开面全是访问器"给 Warning（这是明确信号），"只有字段无任何方法"只给 Suggestion——脚本分不出"贫血领域对象"和"值对象/ORM 实体"，后者同样长这样，需要你自己读代码定性。改之前这条判据是逻辑不可达的（详见 `references/architecture-principles.md` §四 口径表）。
 7. **非 Python 的 CC 是正则近似**：`&&`/`||`/`?`/`=>` 已计入（改前因标点分支被塞进 `\b` 组而全部漏计，实测 5 个用例全低估，已修），但注释与字符串仍会被算进花括号配对的函数边界，`switch`/`match` 本体与 case 臂都计一次；Rust/TS 的发现位置串可能带 `pub`/`export` 而非函数名。数字当提示用。
 8. **dep_graph 的模块 = `--target` 下一级目录**：指向仓库根时 `src/` 布局会塌成一个节点、边为空。
@@ -177,6 +179,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 10. **`non_asymmetric_score` 不可用于结论**：实测"3 改进 + 1 真回归"得 +1.98，方向与文档承诺相反；有效的只有回归列表与退出码。
 11. **架构级判断不由脚本给出**：分层是否合理、边界是否泄漏、抽象是否多余、命名是否属于统一语言，只能靠读代码得出。脚本的作用是把怀疑范围缩小到具体文件，不是替你判定。
 12. **五个脚本对"设计问题"零判据**：`references/design-review.md` §一定义的七类里，没有一类由脚本实现（变化边界要靠 git 共变史、不变量归属要靠人工找第二条表达、概念映射没有词表可比……）。因此"R1-R6 零条发现 + 健康分 100"这个组合**不是设计合格的证据**，它只说明没有触发这几条阈值。阶段零跳过之后，后面所有数字都会被误当结论引用。
+13. **R2 的"扇出"是去重后的顶层依赖数，不是 import 条数**：`from pkg.s1 … pkg.s8` 实测算 1 个依赖、0 条发现；stdlib 与文件自身包名也不计入。同一份代码在真实语料上的两种口径差得很远（427 个 `.py` 的语料：顶层归一 31 Warning + 3 Critical，按导入条目 124 Warning + 107 Critical），所以引用 R2 前必须先说用的是哪个口径。
 
 ## 协同
 

@@ -34,6 +34,29 @@ for _stream in (sys.stdout, sys.stderr):
 
 # ── Language detection ──────────────────────────────────────────────
 
+# 与 arch_scan / dep_graph / risk_diagnose 保持同一张表（逐字相同），
+# 由 tests/test_smoke.py::_check_ignore_dirs_identical 钉住——四张表一旦分叉，
+# 同一个 --target 会让各阶段看到不同的文件集，files_analyzed 就不可比。
+IGNORE_DIRS = {
+    ".git",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".venv",
+    "venv",
+    "env",
+    "testdata",
+    ".idea",
+    ".vscode",
+    ".next",
+    ".nuxt",
+    "coverage",
+}
+
 LANG_EXTENSIONS = {
     ".py": "python",
     ".go": "go",
@@ -419,23 +442,7 @@ def analyze_target(target: str) -> dict:
             results.append(r)
     elif os.path.isdir(target):
         for root, dirs, files in os.walk(target):
-            # Skip common ignore dirs
-            dirs[:] = [
-                d
-                for d in dirs
-                if d
-                not in {
-                    ".git",
-                    "node_modules",
-                    "vendor",
-                    "__pycache__",
-                    ".cache",
-                    "dist",
-                    "build",
-                    "target",
-                    ".venv",
-                }
-            ]
+            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
             for fname in sorted(files):
                 fpath = os.path.join(root, fname)
                 ext = Path(fname).suffix.lower()

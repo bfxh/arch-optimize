@@ -46,6 +46,8 @@ LANG_EXTENSIONS = {
     ".jsx": "javascript",
 }
 
+# 与 arch_scan / quality_metrics / risk_diagnose 保持同一张表（逐字相同），
+# 由 tests/test_smoke.py::_check_ignore_dirs_identical 钉住。
 IGNORE_DIRS = {
     ".git",
     "node_modules",
@@ -58,11 +60,12 @@ IGNORE_DIRS = {
     ".venv",
     "venv",
     "env",
+    "testdata",
     ".idea",
     ".vscode",
-    "coverage",
     ".next",
     ".nuxt",
+    "coverage",
 }
 
 LAYER_KEYWORDS = {

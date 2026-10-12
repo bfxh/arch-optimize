@@ -68,8 +68,12 @@ IGNORE_DIRS = {
     "target",
     ".venv",
     "venv",
+    "env",
     ".idea",
     ".vscode",
+    "coverage",
+    ".next",
+    ".nuxt",
     "testdata",
 }
 
