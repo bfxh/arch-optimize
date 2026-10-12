@@ -233,6 +233,52 @@ def _check_self_scan_claims():
     )
     assert diag["health_score"]["critical"] > 0, "README 说 risk_diagnose 侧有 Critical"
 
+    _verify_readme_self_scan_claims(data, diag)
+
+
+def _verify_readme_self_scan_claims(qm, diag):
+    """README 自扫段落里的条数与 MI 区间必须能由这两个脚本当场复算。"""
+    import re
+
+    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
+        readme = fh.read()
+    m = re.search(
+        r"`risk_diagnose` from (\d+) Critical \+ (\d+) Warning and "
+        r"`quality_metrics` from (\d+) Critical \+ (\d+) Warning",
+        readme,
+    )
+    assert m, "README 的自扫条数句式变了，这条复算断言失效（请同步本检查与 README）"
+    claimed = tuple(int(x) for x in m.groups())
+    actual = (
+        diag["health_score"]["critical"],
+        diag["health_score"]["warning"],
+        qm["health_score"]["critical"],
+        qm["health_score"]["warning"],
+    )
+    assert claimed == actual, (
+        f"README 自扫条数写的是 {claimed}，实测 {actual}——改脚本必须同批改 README"
+    )
+
+    rng = re.search(r"below the 15 gate \(([\d.]+)[\u2013-]([\d.]+)\)", readme)
+    assert rng, "README 的 MI 区间写法变了，这条复算断言失效"
+    scanners = {
+        "arch_scan.py",
+        "dep_graph.py",
+        "quality_metrics.py",
+        "risk_diagnose.py",
+        "regression_guard.py",
+    }
+    mis = [
+        f["maintainability_index"]
+        for f in qm["files"]
+        if os.path.basename(f["file"]) in scanners
+    ]
+    assert len(mis) == 5, f"应复算 5 个扫描器的 MI，实际 {len(mis)} 个"
+    lo, hi = float(rng.group(1)), float(rng.group(2))
+    assert abs(min(mis) - lo) < 0.05 and abs(max(mis) - hi) < 0.05, (
+        f"README 说 MI 区间 {lo}–{hi}，实测 {min(mis)}–{max(mis)}"
+    )
+
 
 def _load_json(path):
     with open(path, encoding="utf-8") as fh:
@@ -1002,6 +1048,79 @@ def _check_language_tables():
     )
 
 
+def _check_r3_magic_literal_aggregation():
+    """字面量重复是"一个决策"，必须聚成一条；但量级要能被机读，且判据不许被放宽。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-r3mag-")
+    os.makedirs(os.path.join(out_dir, "a"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "b"), exist_ok=True)
+
+    def pair(vals):
+        for sub in ("a", "b"):
+            body = "\n".join(f"V{i} = {v} + {v} + {v}" for i, v in enumerate(vals))
+            with open(os.path.join(out_dir, sub, "m.py"), "w", encoding="utf-8") as fh:
+                fh.write(body + "\n")
+
+    def magic_findings():
+        data = run_script("risk_diagnose.py", "--target", out_dir, "--json")
+        return [f for f in data["findings"] if ":magic:" in f["location"]]
+
+    try:
+        pair(list(range(10, 61)))  # 51 个不同值 × 3 处 × 2 文件
+        lit = magic_findings()
+        assert len(lit) == 1, f"51 个不同字面量该聚成 1 条，实际 {len(lit)} 条"
+        m = lit[0]["metrics"]
+        assert m["distinct_literals"] == 51, m
+        assert m["total_uses"] == 306, m
+        assert m["files_involved"] == 2, m
+        assert [t["uses"] for t in m["top_values"]] == sorted(
+            (t["uses"] for t in m["top_values"]), reverse=True
+        ), "top_values 必须按出现次数降序"
+        assert len(m["top_values"]) == 10, m["top_values"]
+
+        pair([100, 200, 300])  # 3 个值：同样一条，不因量小变成 3 条
+        lit = magic_findings()
+        assert len(lit) == 1, f"3 个不同字面量也该聚成 1 条，实际 {len(lit)} 条"
+        assert lit[0]["metrics"]["distinct_literals"] == 3, lit[0]["metrics"]
+
+        # 判据不放宽：同一文件内重复（不跨文件）不该报
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("X = 100 + 100 + 100\nY = 200 + 200 + 200\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("Z = 1\n")
+        assert magic_findings() == [], "跨文件条件不满足时不该报"
+
+        # 每文件只出现 1 次、共 2 处（<3）也不该报
+        for sub in ("a", "b"):
+            with open(os.path.join(out_dir, sub, "m.py"), "w", encoding="utf-8") as fh:
+                fh.write("Q = 7\nR = 7\n")
+        assert magic_findings() == [], "总次数 <3 时不该报"
+
+        # 门槛是"同一个值出现 ≥3 次"：只出现 2 次（哪怕跨 2 文件）不该报
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("A = 1234\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("B = 1234\n")
+        assert magic_findings() == [], "同一值只出现 2 次时不该报（门槛 ≥3 次）"
+
+        # 两个值各出现 2 次、合计 4 次——仍不该报（门槛按单值计）
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("A = 5000\nA2 = 5000\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("B = 6000\nB2 = 6000\n")
+        assert magic_findings() == [], "门槛按单值出现次数计，不该被跨值合计凑出来"
+
+        # 报出来的 top_values 里不许出现 <3 次的值
+        pair([100, 200, 300, 400, 500])
+        lit = magic_findings()
+        assert lit, "5 个值各 3 次跨 2 文件必须报"
+        assert all(v["uses"] >= 3 for v in lit[0]["metrics"]["top_values"]), (
+            f"报告里不该出现 <3 次的值：{lit[0]['metrics']['top_values']}"
+        )
+        assert lit[0]["metrics"]["total_uses"] == 30, lit[0]["metrics"]
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def _check_design_review_contract():
     """设计评审层必须存在、七类齐全、五段契约齐全，且没有孤儿参考文档。"""
     ref_dir = os.path.join(ROOT, "references")
@@ -1080,6 +1199,7 @@ def test_smoke(tmp_path=None):
         _check_ignored_dirs_excluded_from_scan()
         _check_r2_fanout_fires()
         _check_r4_abstraction_fires()
+        _check_r3_magic_literal_aggregation()
         _check_design_review_contract()
         _check_all_assertions_wired()
     finally:

@@ -884,21 +884,44 @@ def detect_r3(files_data):
         for i, line in enumerate(clean.split("\n"), 1):
             for m in MAGIC_NUM_RE.findall(line):
                 num_locations[m].append((rel, i))
+    hits = []
     for value, locs in num_locations.items():
         files_hit = {rel for rel, _ in locs}
         if len(locs) >= 3 and len(files_hit) >= 2:
-            sample = locs[0]
-            findings.append(
-                _finding(
-                    "R3",
-                    "Critical",
-                    f"{sample[0]}:magic:{value}:{sample[1]}",
-                    symptom=f"魔法数字 {value} 重复出现 {len(locs)} 次跨 {len(files_hit)} 文件",
-                    source="业务常量未命名并集中定义，散落字面量",
-                    consequence="阈值/配置调整需逐处搜索修改，易遗漏且语义不明",
-                    remedy="提取为命名常量/配置项，单一来源引用",
-                )
+            hits.append((value, locs, files_hit))
+    if hits:
+        # 一个"魔法数字未命名"的决策算一条债务：改前每个不同字面量各出一条
+        # Critical，51 个字面量就是 51×15 扣分，把规模差异洗成了条数差异。
+        hits.sort(key=lambda h: (-len(h[1]), h[0]))
+        total_uses = sum(len(locs) for _v, locs, _f in hits)
+        total_files = len({rel for _v, locs, _f in hits for rel, _l in locs})
+        top = "、".join(f"{v}({len(locs)}处/{len(f)}文件)" for v, locs, f in hits[:5])
+        more = f"，另 {len(hits) - 5} 个值" if len(hits) > 5 else ""
+        lead_value, lead_locs, _lead_files = hits[0]
+        findings.append(
+            _finding(
+                "R3",
+                "Critical",
+                f"{lead_locs[0][0]}:magic:{lead_value}:{lead_locs[0][1]}",
+                symptom=f"魔法数字集中缺失：{len(hits)} 个不同的 ≥2 位数字面量各自重复 ≥3 次"
+                f"且跨 ≥2 文件（共 {total_uses} 处、涉 {total_files} 文件）。"
+                f"高频前几名：{top}{more}",
+                source="业务常量未命名并集中定义，散落字面量（本条按'一个决策一条债务'聚合，"
+                "不按字面量个数拆分）",
+                consequence="阈值/配置调整需逐处搜索修改，易遗漏且语义不明",
+                remedy="逐个提取为命名常量/配置项，单一来源引用；先处理上面列出的高频值，"
+                "低频值可按模块批量收敛",
+                metrics={
+                    "distinct_literals": len(hits),
+                    "total_uses": total_uses,
+                    "files_involved": total_files,
+                    "top_values": [
+                        {"value": v, "uses": len(locs), "files": len(f)}
+                        for v, locs, f in hits[:10]
+                    ],
+                },
             )
+        )
     return findings
 
 
@@ -1311,9 +1334,9 @@ def has_class_fields(node) -> bool:
 # ── Finding assembly & aggregation ──────────────────────────────────
 
 
-def _finding(risk, severity, location, symptom, source, consequence, remedy):
-    """Build a four-part finding dict."""
-    return {
+def _finding(risk, severity, location, symptom, source, consequence, remedy, **extra):
+    """Build a four-part findings dict; extra keys are optional structured evidence."""
+    out = {
         "risk": risk,
         "risk_name": RISK_NAMES[risk],
         "severity": severity,
@@ -1323,6 +1346,8 @@ def _finding(risk, severity, location, symptom, source, consequence, remedy):
         "consequence": consequence,
         "remedy": remedy,
     }
+    out.update(extra)
+    return out
 
 
 def compute_health_impact(findings, scanned_lines=0):

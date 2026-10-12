@@ -70,7 +70,7 @@ python scripts/risk_diagnose.py --target <项目> --json
 |------|------|----------|--------------------------|------------------|
 | R1 | 认知过载 | 理解成本 | 函数 >50 行 / 嵌套 >5 层 / CC >15 = Critical；20–50 行、4–5 层 = Warning；参数 >4 = Warning | 语义密度、命名是否揭示意图 |
 | R2 | 变更传播 | 改一处波及多处 | 单文件**去重后的顶层依赖数**：>7 = Critical，≥5 = Warning（Python 把 `pkg.a`/`pkg.b` 折叠成 `pkg`，实测同一包 8 条兄弟模块 import 只算 1 个依赖、0 条发现；stdlib 与自身包名不计入） | 真实"变更触及 N 文件"需 git 共变历史，脚本未实现 |
-| R3 | 知识重复 | 同一决策多处表达 | 8-gram Jaccard ≥0.6 Warning / ≥0.8 Critical；**跨上下文的一律降 Warning 并标明两上下文名**，同上下文按原阈值；≥2 位数字面量重复 ≥3 次且跨 ≥2 文件 = Critical | 纯词汇层面分不出"通用脚手架"与"领域词"，跨上下文报的是可能而非定论 |
+| R3 | 知识重复 | 同一决策多处表达 | 8-gram Jaccard ≥0.6 Warning / ≥0.8 Critical；**跨上下文的一律降 Warning 并标明两上下文名**，同上下文按原阈值；≥2 位数字面量重复 ≥3 次且跨 ≥2 文件 = Critical（**按"一个决策一条债务"聚合成 1 条**，条数不随字面量个数增长，量级写在 `metrics` 里） | 纯词汇层面分不出"通用脚手架"与"领域词"，跨上下文报的是可能而非定论 |
 | R4 | 偶发复杂性 | 比问题本身更复杂 | CC >20 = Critical（路径含算法关键词降 Warning）；**同文件内**仅一个实现的抽象类/接口/工厂 = Warning，其中"抽象"只认基类名含 `ABC`/`Protocol`/`Abstract*`（`class Base:` + `raise NotImplementedError` 这种 duck-typed 接口不认，实测 0 条） | 跨文件的实现计数；"这个抽象是否必要" |
 | R5 | 依赖失序 | 依赖方向一致 | 文件级循环依赖 = Critical；领域层 import 命中 infra 标记（**词边界匹配**，`_`/`-`/`.` 视作边界）= Critical；内层(rank≥2)依赖外层 = Critical | 相对导入 `from . import x` 不建边，包内环检不出；复合名（如 `sqlalchemy`）须在标记表显式登记才认得出 |
 | R6 | 领域模型扭曲 | 代码忠实表达问题 | 目录名命中通用技术词 = Warning；跨上下文关键词泄漏 = Warning；Python 类"公开面全是访问器" = Warning、"只有字段无任何方法" = Suggestion | `@dataclass` 纯字段类只给 Suggestion（值对象也长这样）；跨语言不判 |
@@ -78,7 +78,7 @@ python scripts/risk_diagnose.py --target <项目> --json
 > **注意 CC 的两个不同阈值**：CC>15 记在 **R1**（认知过载），CC>20 才记 **R4**（偶发复杂性）。二者是两条独立判据，不是同一规则的两种写法。
 > 非 Python 语言的 CC 与函数抽取仍是**正则近似**，但布尔运算符 `&&`/`||`、三元 `?`、Rust `=>` 臂**已经计入**（改前被塞进 `\b` 组永远匹配不到：实测 if+7 个 `&&` 真值 9 被算成 2、三元 `?` 真值 2 被算成 1，已修）。剩余近似点：注释与字符串里的括号会污染花括号配对的函数边界，`switch`/`match` 本体与 case 臂都计一次（与仓内 C 口径一致）。这些数字仍只当"提示"。
 
-每条发现四段式：**Symptom → Source → Consequence → Remedy**。
+每条发现四段式：**Symptom → Source → Consequence → Remedy**（R3 的字面量聚合条额外带一个 `metrics` 键，装 `distinct_literals`/`total_uses`/`files_involved`/`top_values`，用来读量级）。
 假阳性防护（组合根装配≠DIP 违规、DTO≠贫血模型等）见 `references/architecture-principles.md`。
 
 **铁律：完成风险诊断前，绝不提出修复建议。**
@@ -170,7 +170,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 1. **空结果 ≠ 没问题**。R2/R3/R5/R6 的盲区都以"静默返回 0 条"的形式出现，不报错也不降级。
 2. **R5 看不见包内循环**：`from . import x` 不建依赖边；同一组文件改成绝对导入才报得出环。判"无循环"前先看项目的导入风格。
 3. **R5 的基础设施判定是词边界匹配，不是子串**：`costs`/`post`/`host`/`netlog` 不会再被判成"领域层依赖基础设施"（改前 6 个非基础设施名里 4 个误报 Critical，实测已归零）。代价是**长名字须显式登记**：`sqlalchemy` 这类现在靠标记表里显式那条才认得，如果你的项目用了别的 DB 驱动（如 `mysql`/`aiomysql`），它不会自动命中——需要时直接往 `INFRA_MARKERS` 加一行。
-4. **R3 的跨上下文条目是"可能"不是"定论"**：同一份代码放同目录出 Critical、放不同目录出 Warning（都报了，严重度分层）。跨上下文那档脚本分不出"复制粘贴的同一决策"与"各模块独立演化的相似 util"——remedy 里会让你二选一，别直接照搬。另一个未修的刷屏源：每个不同的数字面量各出一条 Critical。
+4. **R3 的跨上下文条目是"可能"不是"定论"**：同一份代码放同目录出 Critical、放不同目录出 Warning（都报了，严重度分层）。跨上下文那档脚本分不出"复制粘贴的同一决策"与"各模块独立演化的相似 util"——remedy 里会让你二选一，别直接照搬。字面量档已改为聚合上报（改前 51 个不同字面量＝51 条 Critical＝765 分扣分，现在＝1 条）；代价是健康分不再区分"3 个值"和"51 个值"，量级要看这条发现自带的 `metrics.distinct_literals`/`total_uses`。
 5. **R4 按单文件数实现，且只认命名**：抽象类与其唯一实现分处两文件（常见布局）检不出；同文件 `interface + class` 的惯用写法必报；判"是不是抽象"用的是基类名里有没有 `ABC`/`Protocol`/`Abstract*`，所以 `class Base:` + `raise NotImplementedError` 这种 duck-typed 接口**不报**（实测 0 条，这条窄口径由 `_check_r4_abstraction_fires` 反向钉住——放宽判据会让测试判红，逼着同步改文档）。
 6. **R6 的贫血判据只覆盖 Python，且分两档**："公开面全是访问器"给 Warning（这是明确信号），"只有字段无任何方法"只给 Suggestion——脚本分不出"贫血领域对象"和"值对象/ORM 实体"，后者同样长这样，需要你自己读代码定性。改之前这条判据是逻辑不可达的（详见 `references/architecture-principles.md` §四 口径表）。
 7. **非 Python 的 CC 是正则近似**：`&&`/`||`/`?`/`=>` 已计入（改前因标点分支被塞进 `\b` 组而全部漏计，实测 5 个用例全低估，已修），但注释与字符串仍会被算进花括号配对的函数边界，`switch`/`match` 本体与 case 臂都计一次；Rust/TS 的发现位置串可能带 `pub`/`export` 而非函数名。数字当提示用。
