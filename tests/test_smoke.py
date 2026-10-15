@@ -6,6 +6,8 @@ Zero external dependencies. Run either way:
     python -m pytest tests/             # if pytest is installed
 """
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -1572,6 +1574,95 @@ def _check_ci_workflows_are_strict():
         "tests.yml 没有真正执行 pytest（只提到名字不算）"
         "：文档承诺的 `pytest` 入口必须在 CI 上跑过"
     )
+    # 8) sha↔标签的核验脚本必须存在且真被 CI 调用（否则它会烂掉，只剩形状检查）
+    pin_checker = os.path.join(ROOT, "tests", "check_action_pins.py")
+    assert os.path.exists(pin_checker), "tests/check_action_pins.py 不见了"
+    invoked = []
+    for name in files:
+        with open(os.path.join(wf_dir, name), encoding="utf-8") as wf_fh:
+            wf_lines = wf_fh.read().split(nl)
+        invoked += [
+            ln
+            for ln in wf_lines
+            if "check_action_pins" in ln and not ln.strip().startswith("#")
+        ]
+    assert invoked, (
+        "没有任何工作流调用 tests/check_action_pins.py：sha 与版本标签的核验会悄悄失效"
+    )
+
+
+def _check_action_pin_checker_bites():
+    """核验脚本自己也要能被离线证伪：换 sha、丢版本号都必须判红。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "check_action_pins", os.path.join(ROOT, "tests", "check_action_pins.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    good_sha = "a" * 40
+    other_sha = "b" * 40
+    tmp = tempfile.mkdtemp(prefix="arch-opt-pins-")
+
+    def write(body):
+        with open(os.path.join(tmp, "w.yml"), "w", encoding="utf-8") as fh:
+            fh.write(body)
+        return tmp
+
+    def run_main(workflows_dir):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = mod.main(workflows_dir)
+        return code, buf.getvalue()
+
+    def run_collect(workflows_dir):
+        buf = io.StringIO()
+        code = None
+        try:
+            with contextlib.redirect_stdout(buf):
+                mod.collect_pins(workflows_dir)
+        except SystemExit as exc:
+            code = exc.code
+        return code, buf.getvalue()
+
+    try:
+        orig_resolve = mod.resolve_tag
+        mod.resolve_tag = lambda repo, version: good_sha
+        ok = f"""
+on: push
+permissions:
+  contents: read
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: some/action@{good_sha} # v9.9.9
+"""
+        code, out = run_main(write(ok))
+        assert code == 0, "sha 与标签一致却被判红（尺子过严）"
+        assert "OK" in out and "FAIL" not in out, f"一致时无正当读数：{out!r}"
+        bad = ok.replace(good_sha, other_sha, 2)
+        code, out = run_main(write(bad))
+        assert code == 1, "sha 与标签不符却没判红（这道门是装饰）"
+        assert "FAIL" in out and other_sha[:12] in out and good_sha[:12] in out, (
+            f"不符时读数要同时给出钉的 sha 和上游 sha：{out!r}"
+        )
+        mod.resolve_tag = lambda repo, version: None
+        code, out = run_main(write(ok))
+        assert code == 1, "上游标签取不到却被判绿（不判定不算通过）"
+        assert "FAIL" in out, f"取不到标签要留下能读的判红行：{out!r}"
+        mod.resolve_tag = orig_resolve
+        no_version = f"jobs:\n  j:\n    steps:\n      - uses: some/action@{good_sha}\n"
+        code, out = run_collect(write(no_version))
+        assert code == 1, (
+            f"缺版本注释的钉法必须退 1（sha↔版本无从核验），实际退出 {code}"
+        )
+        assert "形状不合规" in out and "w.yml:4" in out, (
+            f"形状判红要指到文件与行号：{out!r}"
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _check_design_review_contract():
@@ -1734,6 +1825,7 @@ def test_smoke(tmp_path=None):
         _check_ignore_dirs_identical()
         _check_language_tables()
         _check_ci_workflows_are_strict()
+        _check_action_pin_checker_bites()
         _check_ignored_dirs_excluded_from_scan()
         _check_skipped_dirs_disclosed()
         _check_r2_fanout_fires()

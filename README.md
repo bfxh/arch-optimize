@@ -83,7 +83,7 @@ Detectors that have a firing fixture: R1 (long/nested functions, via the density
 
 One meta-guard: `_check_all_assertions_wired()` parses this file and fails if any `_check_*` function is defined but not called from `test_smoke()` (or called but missing). It exists because a check added without wiring reports green forever — that happened during this suite's development and was only caught by mutation testing.
 
-The self-scan figures above are not taken on trust: `_verify_readme_self_scan_claims()` parses the four Critical/Warning counts and the MI range out of this README and recomputes them by running both scorers on `scripts/`, so editing a scanner without updating the paragraph fails the suite. R3's magic-number branch is pinned the same way (`_check_r3_magic_literal_aggregation`): 51 distinct literals must collapse to **one** Critical carrying `metrics.distinct_literals == 51`, and the ≥3-occurrence / cross-file conditions are pinned negatively (2 uses, or repetition inside a single file, must not report). `_check_asymmetric_score_bounds()` pins the regression score contract: bounded to [-1, 1], one vanished test = -0.5, and a single regression costing exactly twice a single fix.
+The self-scan figures above are not taken on trust: `_verify_readme_self_scan_claims()` parses the four Critical/Warning counts and the MI range out of this README and recomputes them by running both scorers on `scripts/`, so editing a scanner without updating the paragraph fails the suite. R3's magic-number branch is pinned the same way (`_check_r3_magic_literal_aggregation`): 51 distinct literals must collapse to **one** Critical carrying `metrics.distinct_literals == 51`, and the ≥3-occurrence / cross-file conditions are pinned negatively (2 uses, or repetition inside a single file, must not report). `_check_asymmetric_score_bounds()` pins the regression score contract: bounded to [-1, 1], one vanished test = -0.5, and a single regression costing exactly twice a single fix. `_check_action_pin_checker_bites()` loads `tests/check_action_pins.py` with the upstream lookup stubbed out, so the pin verifier is falsifiable offline as well: a matching pin must be green (a ruler that is too strict is also broken), a mismatched pin red, an unresolvable tag red, and a pin missing its `# v…` comment must exit 1 rather than be skipped.
 
 ## CI/CD Gates
 
@@ -91,7 +91,7 @@ Three workflows, and one gate that watches the gates:
 
 | Workflow | Blocks on | Deliberately not blocking |
 |---|---|---|
-| `tests.yml` | `python tests/test_smoke.py` on Python 3.10 / 3.12 / 3.13 **and** the same suite under pinned `pytest` | — (matrix has no `|| true`; a failed install is a red run) |
+| `tests.yml` | `python tests/test_smoke.py` on Python 3.10 / 3.12 / 3.13, the same suite under pinned `pytest`, **and** `python tests/check_action_pins.py` (every action SHA must really be the commit its `# v…` comment names) | — (matrix has no `|| true`; a failed install is a red run) |
 | `ruff.yml` | `ruff check .` and `ruff format --check .` with `ruff==0.16.8` pinned | `ruff check . --select ALL` is report-only and uploaded as an artifact |
 | `mypy.yml` | `mypy . --ignore-missing-imports --show-error-codes` with `mypy==2.3.1` pinned | `mypy . --strict` is report-only, uploaded as an artifact |
 
@@ -104,8 +104,11 @@ Three workflows, and one gate that watches the gates:
 - a `pip install` line is unpinned, or installs through an extras group (`-e .[dev]`, whose `pytest>=7.0` would let the tool that judges us drift with PyPI);
 - a workflow references a file that does not exist in the repo (e.g. `requirements.txt`) — that branch never executes, so it is decoration, not setup;
 - `tests.yml` stops actually executing `pytest`, which SKILL.md/README promise as an entry point.
+- `tests/check_action_pins.py` is missing, or no workflow runs it from a non-comment line.
 
 Nine mutations were run against this gate (unpinned action, dropped permissions, missing timeout, `continue-on-error` on a blocking step, unpinned pip, `.[dev]` install, phantom `requirements.txt`, removing the pytest run, and a negative control) — all eight breakages turn red and the negative control (`|| true` mentioned only inside a YAML comment) stays green, because comments are stripped before the checks look at the text.
+
+**A well-formed SHA is not a right SHA**, so `tests/check_action_pins.py` closes the remaining hole: it parses every `- uses: owner/repo@<40-sha> # v1.2.3` line, runs `git ls-remote https://github.com/owner/repo refs/tags/v1.2.3^{} refs/tags/v1.2.3` (preferring the peeled commit so annotated tags compare as commits) and fails when the pinned SHA is not that tag, when the tag cannot be resolved at all, or when a pin is missing its version comment — unresolvable means red, never "not measured, so passed". Nine mutations were run against it: a real-shaped but wrong SHA (12 zeros), deleting the invocation line, making the SHA comparison constant-true, treating an unresolvable tag as a pass, dropping the missing-version shape check, and four that only weaken the *readability* of a verdict (the green case no longer prints `OK`, the mismatch line hides the upstream SHA, the unresolvable line drops the `FAIL` prefix, the shape line loses `file:line`). All nine turn red. The fourth does so by crashing with a `TypeError` on the removed guard branch rather than by printing a clean `FAIL`, so it proves "the run goes red", not "the message is readable". This job needs the network, so an offline runner turns red by design.
 
 `tests.yml` intentionally has **no** `paths:` filter, so editing a workflow alone still runs the suite — that is what keeps this section honest. `concurrency.cancel-in-progress` is disabled for pushes to `main` so the record of which commit was verified never gets cancelled mid-flight.
 
