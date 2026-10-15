@@ -1121,6 +1121,114 @@ def _check_r3_magic_literal_aggregation():
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _check_asymmetric_score_bounds():
+    """`non_asymmetric_score` 必须有界、方向正确、且"弄坏一条 = 修好一条的两倍"。
+
+    改前它按 (target-baseline) 归一，没有新增测试时分母塌成 1：实测
+    "3 改进 + 1 真回归"得 +1.979（文档承诺 [0,1]，方向还反了）。
+    """
+    rg = os.path.join(SCRIPTS, "regression_guard.py")
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-asym-")
+
+    def record(name, lines):
+        path = os.path.join(out_dir, name)
+        p = subprocess.run(
+            [
+                sys.executable,
+                rg,
+                "record",
+                "--output",
+                path,
+                "--test-cmd",
+                _fake_pytest_cmd(lines),
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        assert p.returncode == 0, p.stderr.decode("utf-8", "replace")[:200]
+        return path
+
+    def score(base_lines, curr_lines, allow_removed=()):
+        b = record("b.json", base_lines)
+        c = record("c.json", curr_lines)
+        args = [
+            sys.executable,
+            rg,
+            "compare",
+            "--baseline",
+            b,
+            "--current",
+            c,
+            "--json",
+        ]
+        for nm in allow_removed:
+            args += ["--allow-removed", nm]
+        p = subprocess.run(args, capture_output=True, timeout=120, check=False)
+        return json.loads(p.stdout.decode("utf-8"))
+
+    P = "PASSED"
+    try:
+        same = score([f"t.py::a {P}"] * 3, [f"t.py::a {P}"] * 3)
+        assert same["non_asymmetric_score"] == 0.0, same["non_asymmetric_score"]
+
+        one_gain = score(
+            [f"t.py::a {P}", f"t.py::b {P}", f"t.py::c {P}", "t.py::d FAILED"],
+            [f"t.py::{n} {P}" for n in "abcd"],
+        )
+        one_reg = score(
+            [f"t.py::{n} {P}" for n in "abc"] + ["t.py::d FAILED"],
+            [f"t.py::a {P}", f"t.py::b {P}", "t.py::c FAILED", "t.py::d FAILED"],
+        )
+        assert 0.3 < one_gain["non_asymmetric_score"] < 0.4, one_gain[
+            "non_asymmetric_score"
+        ]
+        assert -0.7 < one_reg["non_asymmetric_score"] < -0.6, one_reg[
+            "non_asymmetric_score"
+        ]
+        assert (
+            abs(
+                abs(one_reg["non_asymmetric_score"])
+                - 2 * one_gain["non_asymmetric_score"]
+            )
+            < 1e-3
+        ), "非对称比必须是 2:1（弄坏一条 = 修好一条的两倍）"
+
+        # 文档登记过的旧案例：3 改进 + 1 真回归，改前 +1.979
+        old_case = score(
+            [f"t.py::p{i} {P}" for i in (1, 2, 3)]
+            + [f"t.py::f{i} FAILED" for i in (1, 2, 3)],
+            [f"t.py::p{i} {P}" for i in (1, 2)]
+            + ["t.py::p3 FAILED"]
+            + [f"t.py::f{i} {P}" for i in (1, 2, 3)],
+        )
+        assert -1.0 <= old_case["non_asymmetric_score"] <= 0.0, (
+            f"3 改进 + 1 真回归不得是正分（旧实现给 +1.979），实际 "
+            f"{old_case['non_asymmetric_score']}"
+        )
+        assert old_case["gate_passed"] is False
+
+        vanish = score(
+            [f"t.py::{n} {P}" for n in "abcd"],
+            [f"t.py::{n} {P}" for n in "abc"],
+        )
+        assert vanish["non_asymmetric_score"] == -0.5, vanish["non_asymmetric_score"]
+
+        # 有界：再大的改进/再狠的回归都出不了 [-1, 1]
+        huge_gain = score(["t.py::a " + P], [f"t.py::{n} {P}" for n in "abcde"])
+        huge_reg = score(
+            [f"t.py::{n} {P}" for n in "abc"], [f"t.py::{n} FAILED" for n in "abc"]
+        )
+        assert huge_gain["non_asymmetric_score"] == 1.0, huge_gain[
+            "non_asymmetric_score"
+        ]
+        assert huge_reg["non_asymmetric_score"] == -1.0, huge_reg[
+            "non_asymmetric_score"
+        ]
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def _check_design_review_contract():
     """设计评审层必须存在、七类齐全、五段契约齐全，且没有孤儿参考文档。"""
     ref_dir = os.path.join(ROOT, "references")
@@ -1200,6 +1308,7 @@ def test_smoke(tmp_path=None):
         _check_r2_fanout_fires()
         _check_r4_abstraction_fires()
         _check_r3_magic_literal_aggregation()
+        _check_asymmetric_score_bounds()
         _check_design_review_contract()
         _check_all_assertions_wired()
     finally:

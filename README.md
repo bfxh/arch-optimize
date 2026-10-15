@@ -83,7 +83,7 @@ Detectors that have a firing fixture: R1 (long/nested functions, via the density
 
 One meta-guard: `_check_all_assertions_wired()` parses this file and fails if any `_check_*` function is defined but not called from `test_smoke()` (or called but missing). It exists because a check added without wiring reports green forever — that happened during this suite's development and was only caught by mutation testing.
 
-The self-scan figures above are not taken on trust: `_verify_readme_self_scan_claims()` parses the four Critical/Warning counts and the MI range out of this README and recomputes them by running both scorers on `scripts/`, so editing a scanner without updating the paragraph fails the suite. R3's magic-number branch is pinned the same way (`_check_r3_magic_literal_aggregation`): 51 distinct literals must collapse to **one** Critical carrying `metrics.distinct_literals == 51`, and the ≥3-occurrence / cross-file conditions are pinned negatively (2 uses, or repetition inside a single file, must not report).
+The self-scan figures above are not taken on trust: `_verify_readme_self_scan_claims()` parses the four Critical/Warning counts and the MI range out of this README and recomputes them by running both scorers on `scripts/`, so editing a scanner without updating the paragraph fails the suite. R3's magic-number branch is pinned the same way (`_check_r3_magic_literal_aggregation`): 51 distinct literals must collapse to **one** Critical carrying `metrics.distinct_literals == 51`, and the ≥3-occurrence / cross-file conditions are pinned negatively (2 uses, or repetition inside a single file, must not report). `_check_asymmetric_score_bounds()` pins the regression score contract: bounded to [-1, 1], one vanished test = -0.5, and a single regression costing exactly twice a single fix.
 
 ## Self-Scan Note
 
@@ -120,7 +120,7 @@ Two caveats when chaining them: `arch_scan` embeds a `scan_timestamp`, so two ru
 
 ## Supported Languages
 
-Python (.py via `ast`), Go, C/C++, Rust, TypeScript/JavaScript — import parsing, CC calculation, and function extraction for each.
+Python (.py via `ast`), Go, C/C++, Rust, TypeScript/JavaScript, plus Java/Kotlin — but **not every script sees every language**: `.java`/`.kt` are only in `arch_scan` and `quality_metrics`, while `dep_graph` and `risk_diagnose` have no Java/Kotlin detectors and therefore skip those files entirely (measured: on a fixture with one `.java` + one `.kt` + one `.py`, `quality_metrics` reported 5 files analyzed, `risk_diagnose` 1). The pinned assertion is that this is the *only* remaining difference between the four language tables.
 
 For non-Python languages, CC and function extents still come from regex plus brace counting: comments and string literals pollute brace matching, and `switch`/`match` counts both the construct and its case arms. Boolean operators (`&&`, `||`), the ternary `?` and Rust `=>` arms **are** counted now — they used to be wrapped in a `\b(...)\b` group where punctuation can never match, which silently under-counted CC (an `if` with seven `&&` reported 2 instead of 9). Treat these numbers as hints, not verdicts.
 
@@ -133,6 +133,8 @@ For non-Python languages, CC and function extents still come from regex plus bra
 | New code MI | >= 15 | Hard | Block PR merge |
 | Cyclomatic complexity | <= 15 | Hard | Block PR merge (Python only; see Supported Languages) |
 | Circular dependencies | = 0 | Hard | Block PR merge |
+
+The MI and CC rows are thresholds you enforce yourself — no script judges "new code" or exits non-zero on CC; see SKILL.md 的「质量门禁」列（含每条"脚本能否直接判红"）。`non_asymmetric_score` 现在有界（[-1,1]，2:1 非对称，由 `_check_asymmetric_score_bounds` 钉住），但它依旧不是判合并的依据。
 
 Only the regression gate is enforceable straight from an exit code, and it now covers both failure modes: a previously-passing test failing **and** a previously-passing test disappearing (delete, rename, skip, or an emptied suite) — the latter fails unless each name is allow-listed with `--allow-removed` / `--allow-removed-file`. Deleting a test that was already failing is allowed. A runnable workflow using only the scripts in this repo is in [`references/regression-guard.md`](references/regression-guard.md) §5.1.
 
