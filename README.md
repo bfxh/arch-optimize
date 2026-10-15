@@ -85,6 +85,30 @@ One meta-guard: `_check_all_assertions_wired()` parses this file and fails if an
 
 The self-scan figures above are not taken on trust: `_verify_readme_self_scan_claims()` parses the four Critical/Warning counts and the MI range out of this README and recomputes them by running both scorers on `scripts/`, so editing a scanner without updating the paragraph fails the suite. R3's magic-number branch is pinned the same way (`_check_r3_magic_literal_aggregation`): 51 distinct literals must collapse to **one** Critical carrying `metrics.distinct_literals == 51`, and the ≥3-occurrence / cross-file conditions are pinned negatively (2 uses, or repetition inside a single file, must not report). `_check_asymmetric_score_bounds()` pins the regression score contract: bounded to [-1, 1], one vanished test = -0.5, and a single regression costing exactly twice a single fix.
 
+## CI/CD Gates
+
+Three workflows, and one gate that watches the gates:
+
+| Workflow | Blocks on | Deliberately not blocking |
+|---|---|---|
+| `tests.yml` | `python tests/test_smoke.py` on Python 3.10 / 3.12 / 3.13 **and** the same suite under pinned `pytest` | — (matrix has no `|| true`; a failed install is a red run) |
+| `ruff.yml` | `ruff check .` and `ruff format --check .` with `ruff==0.16.8` pinned | `ruff check . --select ALL` is report-only and uploaded as an artifact |
+| `mypy.yml` | `mypy . --ignore-missing-imports --show-error-codes` with `mypy==2.3.1` pinned | `mypy . --strict` is report-only, uploaded as an artifact |
+
+`_check_ci_workflows_are_strict()` in the smoke suite re-reads those YAML files on every run and fails if:
+
+- an action is referenced by a mutable tag instead of a 40-character commit SHA;
+- a workflow lacks `permissions: contents: read` at workflow level;
+- any job lacks `timeout-minutes` (a hung job holds a runner and never turns red);
+- `continue-on-error` or `|| true` appears in a step that is **not** a declared `report only` step;
+- a `pip install` line is unpinned, or installs through an extras group (`-e .[dev]`, whose `pytest>=7.0` would let the tool that judges us drift with PyPI);
+- a workflow references a file that does not exist in the repo (e.g. `requirements.txt`) — that branch never executes, so it is decoration, not setup;
+- `tests.yml` stops actually executing `pytest`, which SKILL.md/README promise as an entry point.
+
+Nine mutations were run against this gate (unpinned action, dropped permissions, missing timeout, `continue-on-error` on a blocking step, unpinned pip, `.[dev]` install, phantom `requirements.txt`, removing the pytest run, and a negative control) — all eight breakages turn red and the negative control (`|| true` mentioned only inside a YAML comment) stays green, because comments are stripped before the checks look at the text.
+
+`tests.yml` intentionally has **no** `paths:` filter, so editing a workflow alone still runs the suite — that is what keeps this section honest. `concurrency.cancel-in-progress` is disabled for pushes to `main` so the record of which commit was verified never gets cancelled mid-flight.
+
 ## Self-Scan Note
 
 Running these tools on this repository itself reports poor numbers: over `scripts/` the average MI is about 22, and all five scanners sit below the 15 gate (0.0–9.8) — the only file clearing it is the two-line `__init__.py`. Both scorers return health 0, `risk_diagnose` from 32 Critical + 47 Warning and `quality_metrics` from 13 Critical + 7 Warning. These figures move every time the scanners themselves change length: `risk_diagnose.py` now scores MI 0.0 purely because of its own size, which is precisely the artifact being illustrated — MI here is computed per whole file and dominated by the `16.2·ln(LOC)` term, the health score subtracts a flat 15 per finding with no normalization by code volume (`health_score` now also reports `scanned_lines` and `penalty_per_kloc` so cross-project comparison has an anchor; `score` itself stays absolute so the gate contract is unchanged), and the two scorers run different detectors over different file sets, hence different inputs for the same directory. The four numbers above are pinned by `_check_self_scan_claims()` in the smoke suite, so if they drift the run fails and the paragraph must be updated rather than silently going stale.
@@ -156,6 +180,9 @@ arch-optimize/
 ├── README.md
 ├── LICENSE                           # MIT License
 ├── pyproject.toml                    # Metadata only, no runtime deps
+├── .github/workflows/                # tests.yml (smoke + pytest), ruff.yml, mypy.yml
+├── tests/
+│   └── test_smoke.py                 # Zero-dep suite; also gates the CI config itself
 ├── scripts/
 │   ├── arch_scan.py                  # Stage 1: architecture perception
 │   ├── dep_graph.py                  # Stage 1: dependency graph + cycle detection

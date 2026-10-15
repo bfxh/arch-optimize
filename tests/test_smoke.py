@@ -1480,6 +1480,100 @@ def _check_asymmetric_score_bounds():
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _workflow_steps(text):
+    """把 workflow 正文切成步骤块：(步骤名, 块内文本)。
+
+    只做行级切分（不引 yaml 依赖）：以 "- " 开头的行为一块之始。
+    """
+    lines = text.split("\n")
+    blocks = []
+    cur = None
+    for ln in lines:
+        if ln.strip().startswith(("- name:", "- uses:")):
+            if cur is not None:
+                blocks.append(cur)
+            name = (
+                ln.strip()[len("- name:") :].strip().strip("\"'")
+                if "name:" in ln
+                else "(bare step)"
+            )
+            cur = [name, [ln]]
+        elif cur is not None:
+            cur[1].append(ln)
+    if cur is not None:
+        blocks.append(cur)
+    return [(n, "\n".join(b)) for n, b in blocks]
+
+
+def _check_ci_workflows_are_strict():
+    """CI 配置自己也要有门：装饰步骤、无 timeout、未钉版本都要当场判红。
+
+    判据一律只看非注释行——本文件与 workflow 里的解释性注释会提到 `|| true`、
+    requirements.txt 这类字样，把它们当代码读就会自己误判自己（实测踩过一次）。
+    """
+    nl = chr(10)
+    wf_dir = os.path.join(ROOT, ".github", "workflows")
+    files = sorted(f for f in os.listdir(wf_dir) if f.endswith(".yml"))
+    assert len(files) >= 3, f"只看到 {len(files)} 个工作流，CI 目录可能被挪动过"
+    for name in files:
+        with open(os.path.join(wf_dir, name), encoding="utf-8") as fh:
+            raw = fh.read()
+        lines = raw.split(nl)
+        code_lines = [ln for ln in lines if not ln.strip().startswith("#")]
+        code = nl.join(code_lines)
+        # 1) 每个 action 必须钉 40 位 commit sha
+        for ln in code_lines:
+            s = ln.strip()
+            if s.startswith(("- uses:", "uses:")):
+                ref = s.split("uses:", 1)[1].strip()
+                assert (
+                    "@" in ref and len(ref.split("@")[1].split("#")[0].strip()) == 40
+                ), f"{name} 的 action 没钉完整 sha（漂移会让门的规则面悄悄变）：{ref}"
+        # 2) workflow 级 permissions
+        assert nl.join(["permissions:", "  contents: read"]) in code, (
+            f"{name} 缺 workflow 级 `permissions: contents: read`"
+        )
+        # 3) 每个 job 都要有 timeout-minutes（与 runs-on 计数配对）
+        n_jobs = code.count("runs-on:")
+        n_timeout = code.count("timeout-minutes:")
+        assert n_jobs > 0 and n_timeout >= n_jobs, (
+            f"{name} 有 {n_jobs} 个 job 但只有 {n_timeout} 个 timeout-minutes"
+            "（挂死的 job 会长期占住 runner 且不判红）"
+        )
+        # 4) 吞错的 `|| true` 与 continue-on-error 只允许出现在 report-only 步骤里
+        for step_name, block in _workflow_steps(raw):
+            step_code = nl.join(
+                ln for ln in block.split(nl) if not ln.strip().startswith("#")
+            )
+            if "|| true" in step_code or "continue-on-error: true" in step_code:
+                assert "report only" in step_name, (
+                    f"{name} 的步骤「{step_name}」在吞错，但它不是 report-only 档"
+                    "（真门不许 continue-on-error）"
+                )
+        # 5) pip 安装必须钉版本（本地 -e 除外；extras 一律禁止）
+        for ln in code_lines:
+            if "pip install" in ln:
+                assert ".[" not in ln, (
+                    f"{name} 用 extras 安装（`.[dev]` 一类）：extras 里的约束通常是 >=，"
+                    "判定用的工具会随 PyPI 漂移，必须逐个显式钉版本：" + ln.strip()
+                )
+                if "-e ." not in ln:
+                    assert "==" in ln, f"{name} 的 pip 安装没钉版本：{ln.strip()}"
+        # 6) 判据不许依赖永不执行的分支（引用不存在的文件就是装饰）
+        if "requirements.txt" in code:
+            assert os.path.exists(os.path.join(ROOT, "requirements.txt")), (
+                f"{name} 引用了 requirements.txt，但仓库里没有这个文件"
+                "——那条分支永远不执行，是装饰"
+            )
+    # 7) 文档承诺 pytest 入口，CI 就必须真跑一次
+    with open(os.path.join(wf_dir, "tests.yml"), encoding="utf-8") as fh:
+        tests_text = fh.read()
+    assert "-m pytest" in tests_text or "pytest tests" in tests_text, (
+        "tests.yml 没有真正执行 pytest（只提到名字不算）"
+        "：文档承诺的 `pytest` 入口必须在 CI 上跑过"
+    )
+
+
 def _check_design_review_contract():
     """设计评审层必须存在、七类齐全、五段契约齐全，且没有孤儿参考文档。"""
     ref_dir = os.path.join(ROOT, "references")
@@ -1639,6 +1733,7 @@ def test_smoke(tmp_path=None):
         _check_self_scan_claims()
         _check_ignore_dirs_identical()
         _check_language_tables()
+        _check_ci_workflows_are_strict()
         _check_ignored_dirs_excluded_from_scan()
         _check_skipped_dirs_disclosed()
         _check_r2_fanout_fires()
