@@ -773,10 +773,31 @@ def _check_gate_blocks_vanish():
 
 
 EXPECTED_FLAGS = {
-    "arch_scan.py": {"--target", "--json", "--depth"},
-    "dep_graph.py": {"--target", "--json", "--output", "--format", "--max-depth"},
-    "risk_diagnose.py": {"--target", "--file", "--json", "--risk", "--min-severity"},
-    "quality_metrics.py": {"--target", "--file", "--json", "--min-cc", "--quiet"},
+    "arch_scan.py": {"--target", "--json", "--depth", "--allow-ignored-dir"},
+    "dep_graph.py": {
+        "--target",
+        "--json",
+        "--output",
+        "--format",
+        "--max-depth",
+        "--allow-ignored-dir",
+    },
+    "risk_diagnose.py": {
+        "--target",
+        "--file",
+        "--json",
+        "--risk",
+        "--min-severity",
+        "--allow-ignored-dir",
+    },
+    "quality_metrics.py": {
+        "--target",
+        "--file",
+        "--json",
+        "--min-cc",
+        "--quiet",
+        "--allow-ignored-dir",
+    },
     "regression_guard.py": {
         "--output",
         "--test-cmd",
@@ -892,8 +913,11 @@ def _check_ignore_dirs_identical():
             f"{name} 的忽略目录表与其余脚本不一致：多 {sorted(table - CANONICAL_IGNORE_DIRS)}，"
             f"少 {sorted(CANONICAL_IGNORE_DIRS - table)}"
         )
-        assert "not in IGNORE_DIRS" in src, (
-            f"{name} 定义了 IGNORE_DIRS 但没有用它过滤目录（目录遍历漏了过滤）"
+        assert "not in blocked" in src, (
+            f"{name} 的分析集没有用算出来的忽略表过滤目录（过滤行丢了或被改写）"
+        )
+        assert "active_ignore_dirs(allow_ignored)" in src, (
+            f"{name} 没有把 --allow-ignored-dir 接进过滤链"
         )
 
 
@@ -1500,6 +1524,88 @@ def _check_design_review_contract():
     assert "零条发现" in skill, "SKILL.md 未声明『最重的设计问题往往零条发现』"
 
 
+def _check_skipped_dirs_disclosed():
+    """被忽略目录必须自报家门：否则「0 条发现」和「这一整块没读」在输出里长得一样。"""
+    root = tempfile.mkdtemp(prefix="arch-opt-skip-")
+    expected = {"node_modules": 1, "venv": 3}
+    try:
+        for sub in ("src", "venv", os.path.join("node_modules", "pkg")):
+            os.makedirs(os.path.join(root, sub), exist_ok=True)
+        with open(os.path.join(root, "src", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("def f():\n    return 1\n")
+        for i in range(3):
+            with open(
+                os.path.join(root, "venv", f"lib{i}.py"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write(f"def lib{i}():\n    return {i}\n")
+        with open(
+            os.path.join(root, "node_modules", "pkg", "index.js"), "w", encoding="utf-8"
+        ) as fh:
+            fh.write("module.exports = 1;\n")
+
+        for script in (
+            "arch_scan.py",
+            "dep_graph.py",
+            "risk_diagnose.py",
+            "quality_metrics.py",
+        ):
+            data = run_script(script, "--target", root, "--json")
+            assert data["skipped_dirs"] == expected, (
+                f"{script} 没披露被跳过的目录（或计数不对）：{data.get('skipped_dirs')}"
+            )
+            assert data["skipped_files_total"] == 4, (
+                f"{script} 跳过的文件数应为 4，实际 {data['skipped_files_total']}"
+            )
+            assert data["ignore_dirs_allowed"] == [], data["ignore_dirs_allowed"]
+            # 人读输出也要看得见，不能只藏在 JSON 里
+            p = subprocess.run(
+                [sys.executable, os.path.join(SCRIPTS, script), "--target", root],
+                capture_output=True,
+                timeout=120,
+                check=False,
+            )
+            text = p.stdout.decode("utf-8", "replace")
+            assert "venv=3" in text and "node_modules=1" in text, (
+                f"{script} 的人读输出没说出跳过了哪些目录、各多少个文件："
+                + " | ".join(ln.strip() for ln in text.splitlines() if ln.strip())[
+                    -160:
+                ]
+            )
+
+        # 解除一个目录：它必须重新进入分析集，且披露里只剩另一个
+        data = run_script(
+            "risk_diagnose.py",
+            "--target",
+            root,
+            "--allow-ignored-dir",
+            "venv",
+            "--json",
+        )
+        assert data["files_analyzed"] == 4, data["files_analyzed"]
+        assert data["skipped_dirs"] == {"node_modules": 1}, data["skipped_dirs"]
+        assert data["ignore_dirs_allowed"] == ["venv"], data["ignore_dirs_allowed"]
+
+        # 空发现 + 有跳过 ⇒ 不许说"健康"
+        p = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS, "risk_diagnose.py"),
+                "--target",
+                root,
+                "--risk",
+                "R2",
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        text = p.stdout.decode("utf-8", "replace")
+        assert "looks healthy" not in text, f"还有目录没读却宣布健康：\n{text[-400:]}"
+        assert "无发现≠无问题" in text, text[-400:]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_all_assertions_wired():
     """每个 _check_* 都必须被 test_smoke 调用——写了但没接线的断言等于不存在。"""
     import re
@@ -1534,6 +1640,7 @@ def test_smoke(tmp_path=None):
         _check_ignore_dirs_identical()
         _check_language_tables()
         _check_ignored_dirs_excluded_from_scan()
+        _check_skipped_dirs_disclosed()
         _check_r2_fanout_fires()
         _check_r4_abstraction_fires()
         _check_r3_magic_literal_aggregation()

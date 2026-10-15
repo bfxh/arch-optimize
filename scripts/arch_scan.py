@@ -188,12 +188,30 @@ def _normalize(rel):
     return rel.replace(os.sep, "/")
 
 
-def collect_files(target, max_depth):
+def active_ignore_dirs(allow_ignored):
+    """被 --allow-ignored-dir 解除的目录名不再过滤。"""
+    allowed = {a.strip() for a in (allow_ignored or ()) if a.strip()}
+    return {d for d in IGNORE_DIRS if d not in allowed}, allowed
+
+
+def _count_files_under(path):
+    total = 0
+    for _root, _dirs, files in os.walk(path):
+        total += len(files)
+    return total
+
+
+def collect_files(target, max_depth, allow_ignored=(), skipped=None):
     """Collect (rel, full) for all files respecting ignore dirs and depth."""
     result = []
+    blocked, _allowed = active_ignore_dirs(allow_ignored)
     target_abs = os.path.abspath(target)
     for root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+        for d in [x for x in dirs if x in blocked]:
+            if skipped is not None:
+                n = _count_files_under(os.path.join(root, d))
+                skipped[d] = skipped.get(d, 0) + n
+        dirs[:] = [d for d in dirs if d not in blocked]
         rel_root = _normalize(os.path.relpath(root, target_abs))
         depth = 0 if rel_root == "." else rel_root.count("/") + 1
         if depth > max_depth:
@@ -553,14 +571,18 @@ def analyze_modules(target, files, modules):
 # ── Main scan ──────────────────────────────────────────────────────
 
 
-def scan_project(target, max_depth):
+def scan_project(target, max_depth, allow_ignored=()):
     """Run full architecture scan and return structured result."""
     target_abs = os.path.abspath(target)
-    files = collect_files(target_abs, max_depth)
+    skipped = {}
+    files = collect_files(target_abs, max_depth, allow_ignored, skipped)
     modules_map = detect_modules(files, max_depth)
     module_list = analyze_modules(target_abs, files, modules_map)
     return {
         "target": target_abs,
+        "skipped_dirs": dict(sorted(skipped.items())),
+        "skipped_files_total": sum(skipped.values()),
+        "ignore_dirs_allowed": sorted(active_ignore_dirs(allow_ignored)[1]),
         "scan_timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
         "directory_tree": scan_tree(target_abs, max_depth),
         "entry_points": detect_entry_points(target_abs, files),
@@ -640,6 +662,13 @@ def print_human_readable(result):
     print(f"  Files:       {s['total_files']}")
     print(f"  Directories: {s['total_dirs']}")
     print(f"  Modules:     {s['total_modules']}")
+    sk = result.get("skipped_dirs") or {}
+    if sk:
+        det = ", ".join(f"{k}={v}" for k, v in sorted(sk.items()))
+        print(f"  Skipped:     {det}")
+        print(
+            f"               ({sum(sk.values())} 个文件一个字没读；--allow-ignored-dir NAME 可解除)",
+        )
 
     print(f"\n  {'─' * 56}")
     print("  Directory Structure:")
@@ -706,6 +735,13 @@ Examples:
         """,
     )
     parser.add_argument("--target", required=True, help="Project directory to scan")
+    parser.add_argument(
+        "--allow-ignored-dir",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Un-ignore a directory name (repeatable); its files are scanned again",
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument(
         "--depth", type=int, default=5, help="Maximum scan depth (default: 5)"
@@ -717,7 +753,7 @@ Examples:
         print(f"Error: '{args.target}' is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    result = scan_project(args.target, args.depth)
+    result = scan_project(args.target, args.depth, args.allow_ignored_dir)
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
