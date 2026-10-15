@@ -24,6 +24,7 @@ jobs:
   mypy:
     name: MyPy Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -37,16 +38,10 @@ jobs:
       - name: Install MyPy
         run: pip install "mypy==2.3.1"  # 钉版本：规则面随版本变化，否则门的判定会无因漂移
 
-      - name: Install type stubs
-        run: |
-          pip install types-requests types-PyYAML types-setuptools || true
-          # 安装项目依赖
-          if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt || true
-          fi
-          if [ -f "pyproject.toml" ]; then
-            pip install -e . || true
-          fi
+      # 原先这里有一步"装类型 stub / 装 requirements.txt / pip install -e ."，三行全带 `|| true`。
+      # 实测它是装饰性的：本仓 7 个源文件只用标准库（grep 无一例外），requirements.txt 不存在
+      # 所以那条分支永不执行，而 mypy 用 --ignore-missing-imports 跑源码，装不装 -e 都不改判定。
+      # 吞错步骤留着只会让人以为"依赖装好了才判绿"。tests.yml 的 pytest 任务负责真的装。
 
       - name: Run MyPy (blocking)
         # 非 strict 档已清零（20 -> 0），这一步判红即为真回归

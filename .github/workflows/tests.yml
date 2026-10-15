@@ -6,11 +6,21 @@ on:
   pull_request:
   workflow_dispatch:  # 未开 PR 时也能按需跑一次冒烟
 
+# 同一分支上只留最新一次运行；main 上的推送不互相取消（取消历史会让"哪个 sha 被验过"断线）
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
 jobs:
   smoke:
+    name: Smoke (zero deps)
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         python-version: ["3.10", "3.12", "3.13"]
@@ -19,6 +29,28 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      # 零依赖独立运行；含 CLI 契约、回归可判出、record 失败不静默三组断言
+      # 零依赖独立运行；含 CLI 契约、回归可判出、record 失败不静默、CI 配置自锁等断言
       - name: Run smoke tests (zero deps)
         run: python tests/test_smoke.py
+
+  pytest:
+    name: Same suite via pytest
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # SKILL/README 承诺"同一套测试也能用 pytest 跑"，那这条承诺必须真的被 CI 验一次。
+      # 注意不写 `pip install -e .[dev]`：dev extra 是 `pytest>=7.0`，跑 pytest 的门自己会随
+      # PyPI 漂移；这里把判定用的工具逐个钉死，装不上就直接判红（不用 || true 洗成空转绿）。
+      - name: Install pytest (pinned) and the package
+        run: |
+          python -m pip install --upgrade "pip==25.2"
+          pip install "pytest==9.1.1"
+          pip install -e .
+      - name: Run the same suite under pytest
+        run: python -m pytest tests/ -q
