@@ -72,7 +72,7 @@ python scripts/risk_diagnose.py --target <项目> --json
 | R2 | 变更传播 | 改一处波及多处 | 单文件**去重后的顶层依赖数**：>7 = Critical，≥5 = Warning（Python 把 `pkg.a`/`pkg.b` 折叠成 `pkg`，实测同一包 8 条兄弟模块 import 只算 1 个依赖、0 条发现；stdlib 与自身包名不计入） | 真实"变更触及 N 文件"需 git 共变历史，脚本未实现 |
 | R3 | 知识重复 | 同一决策多处表达 | 8-gram Jaccard ≥0.6 Warning / ≥0.8 Critical；**跨上下文的一律降 Warning 并标明两上下文名**，同上下文按原阈值；≥2 位数字面量重复 ≥3 次且跨 ≥2 文件 = Critical（**按"一个决策一条债务"聚合成 1 条**，条数不随字面量个数增长，量级写在 `metrics` 里） | 纯词汇层面分不出"通用脚手架"与"领域词"，跨上下文报的是可能而非定论 |
 | R4 | 偶发复杂性 | 比问题本身更复杂 | CC >20 = Critical（路径含算法关键词降 Warning）；**同文件内**仅一个实现的抽象类/接口/工厂 = Warning，其中"抽象"只认基类名含 `ABC`/`Protocol`/`Abstract*`（`class Base:` + `raise NotImplementedError` 这种 duck-typed 接口不认，实测 0 条） | 跨文件的实现计数；"这个抽象是否必要" |
-| R5 | 依赖失序 | 依赖方向一致 | 文件级循环依赖 = Critical；领域层 import 命中 infra 标记（**词边界匹配**，`_`/`-`/`.` 视作边界）= Critical；内层(rank≥2)依赖外层 = Critical | 相对导入 `from . import x` 不建边，包内环检不出；复合名（如 `sqlalchemy`）须在标记表显式登记才认得出 |
+| R5 | 依赖失序 | 依赖方向一致 | 文件级循环依赖 = Critical（**Python 相对导入现已建边**：`from . import x`/`from .sub import y`/`from ..x import y` 解析到同仓库文件，实测包内两文件互导报出 1 条环；改前永远 0 条）；领域层 import 命中 infra 标记（**词边界匹配**，`_`/`-`/`.` 视作边界）= Critical；内层(rank≥2)依赖外层 = Critical | 相对导入 `from . import x` 不建边，包内环检不出；复合名（如 `sqlalchemy`）须在标记表显式登记才认得出 |
 | R6 | 领域模型扭曲 | 代码忠实表达问题 | 目录名命中通用技术词 = Warning；跨上下文关键词泄漏 = Warning；Python 类"公开面全是访问器" = Warning、"只有字段无任何方法" = Suggestion | `@dataclass` 纯字段类只给 Suggestion（值对象也长这样）；跨语言不判 |
 
 > **注意 CC 的两个不同阈值**：CC>15 记在 **R1**（认知过载），CC>20 才记 **R4**（偶发复杂性）。二者是两条独立判据，不是同一规则的两种写法。
@@ -141,7 +141,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 | 健康分 | ≥ 70 | 阶段三 | 能，但无规模归一，只可同范围前后比；跨规模看 `health_score.penalty_per_kloc`。**过线不代表设计没问题** |
 | 零退化率 | = 100% | 阶段五 | 能（`compare` 退出码 1）；通过过的测试消失/改名/清空同样判红，有意的删除须 `--allow-removed` 放行 |
 | 新增代码 MI | ≥ 15 | 阶段三 | 需自己按改动文件逐个跑 `--file`，脚本无"新增代码"概念 |
-| 无新增循环依赖 | 0 项 | 阶段二 R5 | 部分：相对导入与包内环检不出，"0 项"≠无环 |
+| 无新增循环依赖 | 0 项 | 阶段二 R5 | 部分：R5 的文件级环已含相对导入；`dep_graph` 的目录级图仍不因 `from . import x` 建边（实测同目录互导 modules=['a','b']、edges=0），"0 项"≠无环 |
 
 ## 脚本工具集
 
@@ -168,12 +168,12 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 以下每一条都是实测确认的行为，不是理论上的可能：
 
 1. **空结果 ≠ 没问题**。R2/R3/R5/R6 的盲区都以"静默返回 0 条"的形式出现，不报错也不降级。
-2. **R5 看不见包内循环**：`from . import x` 不建依赖边；同一组文件改成绝对导入才报得出环。判"无循环"前先看项目的导入风格。
+2. **R5 的包内循环已能检出（本轮修）**：`from . import x`、`from .sub import y`、`from ..x import y` 现在都解析到仓库内文件并参与建环，实测两文件互导报 1 条 Critical，单向相对导入不误报。**仍然存在的口径差**：`dep_graph` 按目录级建图，相对导入不给它建边（同目录互导实测 edges=0），所以 dep_graph 报 0 环不等于 R5 报 0 环——两道要分别看。另有两处**不可观测**的防御代码：`detect_r5` 的 `seen_cycles` 去重（实测 20000 个随机依赖图 0 次触发；把它删掉后，本轮 4 个验证语料（本仓 + 3 个环 fixture）的输出逐条一致）与相对导入候选里对 `*` 的过滤——它们只是换遍历方式时的保险，别当成已验证的去重能力。
 3. **R5 的基础设施判定是词边界匹配，不是子串**：`costs`/`post`/`host`/`netlog` 不会再被判成"领域层依赖基础设施"（改前 6 个非基础设施名里 4 个误报 Critical，实测已归零）。代价是**长名字须显式登记**：`sqlalchemy` 这类现在靠标记表里显式那条才认得，如果你的项目用了别的 DB 驱动（如 `mysql`/`aiomysql`），它不会自动命中——需要时直接往 `INFRA_MARKERS` 加一行。
 4. **R3 的跨上下文条目是"可能"不是"定论"**：同一份代码放同目录出 Critical、放不同目录出 Warning（都报了，严重度分层）。跨上下文那档脚本分不出"复制粘贴的同一决策"与"各模块独立演化的相似 util"——remedy 里会让你二选一，别直接照搬。字面量档已改为聚合上报（改前 51 个不同字面量＝51 条 Critical＝765 分扣分，现在＝1 条）；代价是健康分不再区分"3 个值"和"51 个值"，量级要看这条发现自带的 `metrics.distinct_literals`/`total_uses`。
 5. **R4 按单文件数实现，且只认命名**：抽象类与其唯一实现分处两文件（常见布局）检不出；同文件 `interface + class` 的惯用写法必报；判"是不是抽象"用的是基类名里有没有 `ABC`/`Protocol`/`Abstract*`，所以 `class Base:` + `raise NotImplementedError` 这种 duck-typed 接口**不报**（实测 0 条，这条窄口径由 `_check_r4_abstraction_fires` 反向钉住——放宽判据会让测试判红，逼着同步改文档）。
 6. **R6 的贫血判据只覆盖 Python，且分两档**："公开面全是访问器"给 Warning（这是明确信号），"只有字段无任何方法"只给 Suggestion——脚本分不出"贫血领域对象"和"值对象/ORM 实体"，后者同样长这样，需要你自己读代码定性。改之前这条判据是逻辑不可达的（详见 `references/architecture-principles.md` §四 口径表）。
-7. **非 Python 的 CC 是正则近似**：`&&`/`||`/`?`/`=>` 已计入（改前因标点分支被塞进 `\b` 组而全部漏计，实测 5 个用例全低估，已修），但注释与字符串仍会被算进花括号配对的函数边界，`switch`/`match` 本体与 case 臂都计一次；Rust/TS 的发现位置串可能带 `pub`/`export` 而非函数名。数字当提示用。
+7. **非 Python 的 CC 是正则近似**：`&&`/`||`/`?`/`=>` 已计入（改前因标点分支被塞进 `\b` 组而全部漏计，实测 5 个用例全低估，已修），但注释与字符串仍会被算进花括号配对的函数边界，`switch`/`match` 本体与 case 臂都计一次；Rust/TS 的发现位置串现在带真函数名（改前取「第一个非空捕获组」，把可选前缀 `pub `/`export ` 当成了函数名，实测报成 `m.rs:pub :1`；已修，并由 `_check_cross_lang_function_names` 钉住 4 种写法：`pub fn`/`pub async fn`/`export function`/`export async function` 的位置串必须是函数名，且不许出现以空格结尾的段）。数字当提示用。
 8. **dep_graph 的模块 = `--target` 下一级目录**：指向仓库根时 `src/` 布局会塌成一个节点、边为空。
 9. **回归防护的硬门已覆盖"测试消失"**：删除 / skip / 改名 / 清空套件都会判红，有意的删除用 `--allow-removed` 或 `--allow-removed-file` 逐条放行并留痕；删掉的是失败测试则不算。仍要注意的是 `--allow-removed` 可以被人为滥用（把真回归的测试"有意删除"掉并放行），所以它必须和"测试总数不得缩减"这类外部自检一起用（`references/regression-guard.md` §5.1 给了可直接用的步骤）。
 10. **`non_asymmetric_score` 已实现文档承诺的有界非对称分**（改前无新增测试时实测 +1.979，方向相反；现在同案例 0.0，范围钉死在 [-1,1]，2:1 非对称由断言钉）。但它依旧**不是判合并的依据**：有效的仍是 `regressions` 列表、未放行的消失项与退出码。

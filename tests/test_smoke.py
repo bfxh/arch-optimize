@@ -1121,6 +1121,233 @@ def _check_r3_magic_literal_aggregation():
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _check_r5_cycle_fires():
+    """R5 的文件级环判据必须有 firing fixture，且相对导入的包内环也要能报。"""
+    root = tempfile.mkdtemp(prefix="arch-opt-cyc-")
+    try:
+        # 绝对导入两文件环
+        os.makedirs(os.path.join(root, "abs"), exist_ok=True)
+        with open(os.path.join(root, "abs", "x.py"), "w", encoding="utf-8") as fh:
+            fh.write("from y import b\n\n\ndef a():\n    return b\n")
+        with open(os.path.join(root, "abs", "y.py"), "w", encoding="utf-8") as fh:
+            fh.write("from x import a\n\n\ndef b():\n    return a\n")
+        data = run_script(
+            "risk_diagnose.py", "--target", root, "--risk", "R5", "--json"
+        )
+        cyc = [f for f in data["findings"] if "循环依赖" in f["symptom"]]
+        assert len(cyc) == 1, (
+            f"两文件绝对导入环该报 1 条，实际 {len(cyc)}: {[c['symptom'] for c in cyc]}"
+        )
+        assert cyc[0]["severity"] == "Critical", cyc[0]["severity"]
+        assert cyc[0]["symptom"].count("->") >= 2, cyc[0]["symptom"]
+
+        # 三文件链式环 A -> B -> C -> A
+        chain = tempfile.mkdtemp(prefix="arch-opt-cyc3-")
+        try:
+            for name, other in (("m1", "m2"), ("m2", "m3"), ("m3", "m1")):
+                with open(
+                    os.path.join(chain, f"{name}.py"), "w", encoding="utf-8"
+                ) as fh:
+                    fh.write(f"from {other} import z\n\n\ndef f():\n    return z\n")
+            d3 = run_script(
+                "risk_diagnose.py", "--target", chain, "--risk", "R5", "--json"
+            )
+            c3 = [f for f in d3["findings"] if "循环依赖" in f["symptom"]]
+            assert len(c3) == 1, f"三文件环该报 1 条（去重后），实际 {len(c3)}"
+            assert c3[0]["symptom"].count("->") == 3, c3[0]["symptom"]
+        finally:
+            shutil.rmtree(chain, ignore_errors=True)
+
+        # 相对导入指向"嵌套包里的模块"：from .nested import b -> pk/nested/b.py
+        deep = tempfile.mkdtemp(prefix="arch-opt-cycdeep-")
+        try:
+            nd = os.path.join(deep, "pk", "nested")
+            os.makedirs(nd, exist_ok=True)
+            for d in (os.path.join(deep, "pk"), nd):
+                with open(os.path.join(d, "__init__.py"), "w", encoding="utf-8") as fh:
+                    fh.write("")
+            with open(os.path.join(nd, "b.py"), "w", encoding="utf-8") as fh:
+                fh.write("from pk.top import t\n\n\ndef B():\n    return t\n")
+            with open(os.path.join(deep, "pk", "top.py"), "w", encoding="utf-8") as fh:
+                fh.write("from .nested import b\n\n\ndef t():\n    return b.B\n")
+            dd = run_script(
+                "risk_diagnose.py", "--target", deep, "--risk", "R5", "--json"
+            )
+            cd = [f for f in dd["findings"] if "循环依赖" in f["symptom"]]
+            assert len(cd) == 1, (
+                "`from .nested import b` 该解析到 pk/nested/b.py 并组成环，实际 "
+                f"{len(cd)}: {[x['symptom'] for x in cd]}"
+            )
+        finally:
+            shutil.rmtree(deep, ignore_errors=True)
+
+        # 相对导入只许落在自己包里：本包没有 helper.py，隔壁包有同名文件时不得按
+        # basename 乱撞（宽松匹配会凭空造出一条环）
+        amb = tempfile.mkdtemp(prefix="arch-opt-cycamb-")
+        try:
+            for pkgname in ("pk1", "pk2"):
+                p_dir = os.path.join(amb, pkgname)
+                os.makedirs(p_dir, exist_ok=True)
+                with open(
+                    os.path.join(p_dir, "__init__.py"), "w", encoding="utf-8"
+                ) as fh:
+                    fh.write("")
+            with open(os.path.join(amb, "pk1", "a.py"), "w", encoding="utf-8") as fh:
+                fh.write("from . import helper\n\n\ndef a():\n    return helper\n")
+            with open(
+                os.path.join(amb, "pk2", "helper.py"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write("from pk1.a import a\n\n\nhelper = 1\n")
+            da = run_script(
+                "risk_diagnose.py", "--target", amb, "--risk", "R5", "--json"
+            )
+            ca = [f for f in da["findings"] if "循环依赖" in f["symptom"]]
+            assert not ca, (
+                "pk1 内不存在 helper，相对导入不该撞到 pk2/helper.py 造出环："
+                f"{[x['symptom'] for x in ca]}"
+            )
+        finally:
+            shutil.rmtree(amb, ignore_errors=True)
+
+        # 相对导入指到"子包"上：from . import sub -> pk/sub/__init__.py
+        subp = tempfile.mkdtemp(prefix="arch-opt-cycsub-")
+        try:
+            sub_dir = os.path.join(subp, "pk", "sub")
+            os.makedirs(sub_dir, exist_ok=True)
+            with open(
+                os.path.join(subp, "pk", "__init__.py"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write("")
+            with open(
+                os.path.join(sub_dir, "__init__.py"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write("from pk.here import h\n")
+            with open(os.path.join(subp, "pk", "here.py"), "w", encoding="utf-8") as fh:
+                fh.write("from . import sub\n\n\ndef h():\n    return sub\n")
+            ds = run_script(
+                "risk_diagnose.py", "--target", subp, "--risk", "R5", "--json"
+            )
+            cs = [f for f in ds["findings"] if "循环依赖" in f["symptom"]]
+            assert len(cs) == 1, (
+                "`from . import sub` 指到子包目录（pk/sub/__init__.py）时该建边成环，"
+                f"实际 {len(cs)}: {[x['symptom'] for x in cs]}"
+            )
+        finally:
+            shutil.rmtree(subp, ignore_errors=True)
+
+        # 跨一级的相对导入：pkg/sub1/a.py 里 `from ..b import z` 该指到 pkg/b.py
+        # （故意在仓库根再放一个 b.py：让"按 basename 兜底"的解析变成二义而失效，
+        #  于是这条 fixture 只在层级算对时才成立）
+        up = tempfile.mkdtemp(prefix="arch-opt-cycup-")
+        try:
+            s1 = os.path.join(up, "pkg", "sub1")
+            os.makedirs(s1, exist_ok=True)
+            with open(os.path.join(s1, "a.py"), "w", encoding="utf-8") as fh:
+                fh.write("from ..b import z\n\n\ndef a():\n    return z\n")
+            with open(os.path.join(up, "pkg", "b.py"), "w", encoding="utf-8") as fh:
+                fh.write("from pkg.sub1.a import a\n\n\nz = a\n")
+            with open(os.path.join(up, "b.py"), "w", encoding="utf-8") as fh:
+                fh.write("decoy = 1\n")
+            du = run_script(
+                "risk_diagnose.py", "--target", up, "--risk", "R5", "--json"
+            )
+            cu = [f for f in du["findings"] if "循环依赖" in f["symptom"]]
+            assert len(cu) == 1, (
+                f"`from ..b import z` 该解析到 pkg/b.py 并成环，实际 {len(cu)}: "
+                f"{[x['symptom'] for x in cu]}"
+            )
+        finally:
+            shutil.rmtree(up, ignore_errors=True)
+
+        # 相对导入：包内环（改前不建边）
+        pkg = tempfile.mkdtemp(prefix="arch-opt-cycpkg-")
+        inner = os.path.join(pkg, "pk")
+        os.makedirs(inner, exist_ok=True)
+        with open(os.path.join(inner, "__init__.py"), "w", encoding="utf-8") as fh:
+            fh.write("")
+        with open(os.path.join(inner, "a.py"), "w", encoding="utf-8") as fh:
+            fh.write("from . import b\n\n\ndef a():\n    return b.B\n")
+        with open(os.path.join(inner, "b.py"), "w", encoding="utf-8") as fh:
+            fh.write("from . import a\n\n\ndef B():\n    return a.a\n")
+        dr = run_script("risk_diagnose.py", "--target", pkg, "--risk", "R5", "--json")
+        cr = [f for f in dr["findings"] if "循环依赖" in f["symptom"]]
+        assert len(cr) == 1, (
+            f"相对导入的包内环该报 1 条（SKILL.md 已知限制第 2 条），实际 {len(cr)}: "
+            f"{[c['symptom'] for c in cr]}"
+        )
+        assert "pk/a.py" in cr[0]["symptom"] and "pk/b.py" in cr[0]["symptom"], cr[0][
+            "symptom"
+        ]
+
+        # 反向 pin：无环项目不得因为相对导入被误报成环
+        clean = tempfile.mkdtemp(prefix="arch-opt-cycok-")
+        cdir = os.path.join(clean, "pk")
+        os.makedirs(cdir, exist_ok=True)
+        with open(os.path.join(cdir, "__init__.py"), "w", encoding="utf-8") as fh:
+            fh.write("")
+        with open(os.path.join(cdir, "leaf.py"), "w", encoding="utf-8") as fh:
+            fh.write("V = 1\n")
+        with open(os.path.join(cdir, "top.py"), "w", encoding="utf-8") as fh:
+            fh.write("from .leaf import V\n\n\ndef t():\n    return V\n")
+        dc = run_script("risk_diagnose.py", "--target", clean, "--risk", "R5", "--json")
+        assert not [f for f in dc["findings"] if "循环依赖" in f["symptom"]], (
+            "单向的相对导入被误判成环（会制造假 Critical）"
+        )
+        shutil.rmtree(cdir, ignore_errors=True)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _check_cross_lang_function_names():
+    """Rust/TS 的发现位置串必须是函数名：改前取"第一个非空捕获组"会拿到 pub / export。"""
+    root = tempfile.mkdtemp(prefix="arch-opt-name-")
+    long_body_rs = "\n".join(f"    let v{i} = 1;" for i in range(60))
+    long_body_ts = "\n".join(f"  const v{i} = 1;" for i in range(60))
+    try:
+        with open(os.path.join(root, "m.rs"), "w", encoding="utf-8") as fh:
+            fh.write(
+                f"pub fn big_rs(x: i32) -> i32 {{\n{long_body_rs}\n    return x\n}}\n"
+            )
+        with open(os.path.join(root, "n.rs"), "w", encoding="utf-8") as fh:
+            fh.write(
+                f"pub async fn fetch_rs(x: i32) -> i32 {{\n{long_body_rs}\n    return x\n}}\n"
+            )
+        with open(os.path.join(root, "m.ts"), "w", encoding="utf-8") as fh:
+            fh.write(
+                f"export function bigTs(a: number): number {{\n{long_body_ts}\n  return a;\n}}\n"
+            )
+        with open(os.path.join(root, "n.ts"), "w", encoding="utf-8") as fh:
+            fh.write(
+                f"export async function loadTs(a: number): number "
+                f"{{\n{long_body_ts}\n  return a;\n}}\n"
+            )
+        data = run_script("risk_diagnose.py", "--target", root, "--json")
+        seen = {}
+        for f in data["findings"]:
+            loc = f["location"]
+            if loc.startswith(("m.rs", "n.rs", "m.ts", "n.ts")):
+                seen.setdefault(loc.split(":")[0], set()).add(loc.split(":")[1])
+        expected = {
+            "m.rs": "big_rs",
+            "n.rs": "fetch_rs",
+            "m.ts": "bigTs",
+            "n.ts": "loadTs",
+        }
+        for fname, want in expected.items():
+            got = seen.get(fname, set())
+            assert want in got, (
+                f"{fname} 的发现位置该含函数名 {want}，实际 {got or '无发现'}"
+            )
+            bad = {
+                g
+                for g in got
+                if g in ("pub", "export", "async", "pub ", "export ") or g.endswith(" ")
+            }
+            assert not bad, f"{fname} 的位置串带上了关键字而不是函数名：{bad}"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _check_asymmetric_score_bounds():
     """`non_asymmetric_score` 必须有界、方向正确、且"弄坏一条 = 修好一条的两倍"。
 
@@ -1297,6 +1524,8 @@ def test_smoke(tmp_path=None):
         _check_gate_blocks_vanish()
         _check_r3_cross_context_duplication()
         _check_r5_infra_word_boundary()
+        _check_r5_cycle_fires()
+        _check_cross_lang_function_names()
         _check_cc_counts_boolean_operators()
         _check_health_density_fields()
         _check_r6_anemic_detector()
