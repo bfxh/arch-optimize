@@ -431,7 +431,12 @@ def extract_functions_c_family(source, lang):
         return funcs
     lines = source.split("\n")
     for match in func_re.finditer(source):
-        name = next((g for g in match.groups() if g), None)
+        # 名字永远是最后一个捕获组：rust/ts 的正则把可选前缀 (pub/async/export)
+        # 也捕获了，取"第一个非空组"会拿到 "pub "/"export "，导致发现位置串写错函数名。
+        captured = [g for g in match.groups() if g]
+        if not captured:
+            continue
+        name = captured[-1].strip()
         if not name:
             continue
         start_idx = source[: match.start()].count("\n")
@@ -1070,6 +1075,48 @@ def _resolve_import_to_file(mod, rel_files):
     return None
 
 
+def _relative_import_candidates(source, rel):
+    """Python 相对导入展开成"仓库内候选路径"，供 R5 建边。
+
+    改前 `from . import x` 不建任何边，包内循环依赖永远检不出（SKILL.md 已知限制
+    第 2 条）。只作用于 R5 的建边：R2 的扇出仍按 import 条数口径，不受影响。
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    parts = rel.replace("\\", "/").split("/")
+    pkg_parts = parts[:-1]
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or not node.level:
+            continue
+        # level=1 是当前包，level=2 是上一级包……
+        base = pkg_parts[: len(pkg_parts) - (node.level - 1)]
+        names = [a.name for a in node.names if a.name != "*"]
+        mods = []
+        if node.module:
+            mods.append(node.module)
+            mods += [f"{node.module}.{n}" for n in names]
+        mods += names
+        for m in mods:
+            cand = "/".join([p for p in base if p] + m.split("."))
+            if cand:
+                out.append(cand)
+    return out
+
+
+def _match_candidate_to_file(cand, rel_files):
+    """候选路径命中 `<cand>.<ext>` 或 `<cand>/__init__.<ext>` 才算仓库内文件。"""
+    for ext in LANG_EXTENSIONS:
+        if cand + ext in rel_files:
+            return cand + ext
+        init = f"{cand}/__init__{ext}"
+        if init in rel_files:
+            return init
+    return None
+
+
 def detect_r5(import_edges, rel_files):
     """R5 依赖失序: cycles, domain->infra, layer-direction violations."""
     findings = []
@@ -1092,6 +1139,10 @@ def detect_r5(import_edges, rel_files):
             for nxt in graph.get(node, ()):
                 if color.get(nxt, WHITE) == GRAY:
                     idx = stack.index(nxt)
+                    # seen_cycles 在当前 DFS 下恒不命中：每条 back-edge 只在源
+                    # 节点 GRAY 时被看到一次，着色 BLACK 后不再重进；实测
+                    # 20000 个随机依赖图 0 次触发。保留只是换遍历方式
+                    # 时的保险，不要把它当成“已验证的去重能力”。
                     cyc = tuple(sorted(stack[idx:]))
                     if cyc not in seen_cycles:
                         seen_cycles.add(cyc)
@@ -1407,6 +1458,12 @@ def diagnose(target, risks, min_severity):
         for m in mods:
             resolved = _resolve_import_to_file(m, rel_files)
             import_edges.append((rel, resolved or m))
+        if lang == "python":
+            # 相对导入（`from . import x`）改前不建边 => 包内环检不出
+            for cand in _relative_import_candidates(source, rel):
+                hit = _match_candidate_to_file(cand, rel_files)
+                if hit and hit != rel:
+                    import_edges.append((rel, hit))
 
     all_findings = []
     if "R1" in risks:
