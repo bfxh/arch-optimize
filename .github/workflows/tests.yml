@@ -54,3 +54,19 @@ jobs:
           pip install -e .
       - name: Run the same suite under pytest
         run: python -m pytest tests/ -q
+
+  action-pins:
+    name: Action pins match upstream tags
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # 冒烟套件只能证明"钉了 40 位 sha 且写了版本号"，证明不了两者相配：
+      # 把 sha 换成任意别的提交，形状检查照样过。这一步拿上游标签对答案。
+      - name: Verify every action pin against its upstream tag
+        run: python tests/check_action_pins.py
