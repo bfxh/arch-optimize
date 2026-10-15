@@ -213,7 +213,11 @@ def detect_layer(name: str) -> str | None:
 
 
 def find_go_module_path(target: str) -> str | None:
-    """Find the Go module path from go.mod if present."""
+    """Find the Go module path from go.mod if present.
+
+    这里故意用完整的 IGNORE_DIRS，不接 --allow-ignored-dir：它只是"找 go.mod"的探针，
+    不是分析集；被解除忽略的目录不该靠它决定模块名。
+    """
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         if "go.mod" in files:
@@ -250,18 +254,36 @@ def map_go_import(
 # ── Graph construction ──────────────────────────────────────────────
 
 
-def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
+def active_ignore_dirs(allow_ignored):
+    """被 --allow-ignored-dir 解除的目录名不再过滤。"""
+    allowed = {a.strip() for a in (allow_ignored or ()) if a.strip()}
+    return {d for d in IGNORE_DIRS if d not in allowed}, allowed
+
+
+def _count_files_under(path):
+    total = 0
+    for _root, _dirs, files in os.walk(path):
+        total += len(files)
+    return total
+
+
+def build_dependency_graph(target: str, max_depth: int = 0, allow_ignored=()) -> tuple:
     """Build a dependency graph from source files under target."""
     target = os.path.abspath(target)
     adj: dict = {}
+    skipped: dict = {}
     modules: dict = {}
     go_module_path = find_go_module_path(target)
     local_go_dirs = set()
 
     # First pass: collect files and local modules
     file_list = []
+    blocked, _allowed = active_ignore_dirs(allow_ignored)
     for root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+        for d in [x for x in dirs if x in blocked]:
+            n = _count_files_under(os.path.join(root, d))
+            skipped[d] = skipped.get(d, 0) + n
+        dirs[:] = [d for d in dirs if d not in blocked]
         if max_depth > 0 and len(Path(root).relative_to(target).parts) > max_depth:
             dirs[:] = []
             continue
@@ -318,7 +340,7 @@ def build_dependency_graph(target: str, max_depth: int = 0) -> tuple:
 
         adj[src_mod].update(new_deps)
 
-    return modules, adj
+    return modules, adj, skipped
 
 
 # ── Cycle detection (Tarjan's SCC) ──────────────────────────────────
@@ -447,7 +469,9 @@ def generate_dot(modules: dict, adj: dict, scc_map: dict, scc_size: dict) -> str
     return "\n".join(lines)
 
 
-def build_result(target: str, modules: dict, adj: dict) -> dict:
+def build_result(
+    target: str, modules: dict, adj: dict, skipped=None, allow_ignored=()
+) -> dict:
     """Build the complete result dictionary with all graph data."""
     fan_in = {m: 0 for m in modules}
     fan_out = {m: len(adj.get(m, set())) for m in modules}
@@ -492,8 +516,12 @@ def build_result(target: str, modules: dict, adj: dict) -> dict:
         for name in sorted(modules)
     ]
 
+    skipped = skipped or {}
     return {
         "target": target,
+        "skipped_dirs": dict(sorted(skipped.items())),
+        "skipped_files_total": sum(skipped.values()),
+        "ignore_dirs_allowed": sorted(active_ignore_dirs(allow_ignored)[1]),
         "modules": module_list,
         "edges": edges,
         "circular_deps": cycles,
@@ -519,6 +547,13 @@ Examples:
     )
     parser.add_argument("--target", required=True, help="Source directory to analyze")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--allow-ignored-dir",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Un-ignore a directory name (repeatable); its files are scanned again",
+    )
     parser.add_argument("--output", help="Write output to file (.md, .gv, .dot, .json)")
     parser.add_argument(
         "--format",
@@ -539,12 +574,14 @@ Examples:
         print(f"Error: {args.target} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    modules, adj = build_dependency_graph(args.target, args.max_depth)
+    modules, adj, skipped = build_dependency_graph(
+        args.target, args.max_depth, args.allow_ignored_dir
+    )
     if not modules:
         print("Error: No analyzable source files found", file=sys.stderr)
         sys.exit(1)
 
-    result = build_result(args.target, modules, adj)
+    result = build_result(args.target, modules, adj, skipped, args.allow_ignored_dir)
     graph_str = result["mermaid"] if args.format == "mermaid" else result["dot"]
 
     if args.json:
@@ -565,6 +602,14 @@ Examples:
     print(f"  Modules:             {len(result['modules'])}")
     print(f"  Edges:               {len(result['edges'])}")
     print(f"  Circular deps:       {len(result['circular_deps'])}")
+    _skipped = result.get("skipped_dirs") or {}
+    if _skipped:
+        _det = ", ".join(f"{k}={v}" for k, v in sorted(_skipped.items()))
+        print(f"  Skipped dirs:        {_det}")
+        print(
+            f"                       ({sum(_skipped.values())} 个文件没被读进图里；"
+            "「0 条循环」只覆盖被读到的部分)"
+        )
 
     print(f"\n  {'─' * 56}")
     print("  Modules (fan-in / fan-out):")

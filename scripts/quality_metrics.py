@@ -57,6 +57,20 @@ IGNORE_DIRS = {
     "coverage",
 }
 
+
+def active_ignore_dirs(allow_ignored):
+    """被 --allow-ignored-dir 解除的目录名不再过滤。"""
+    allowed = {a.strip() for a in (allow_ignored or ()) if a.strip()}
+    return {d for d in IGNORE_DIRS if d not in allowed}, allowed
+
+
+def _count_files_under(path):
+    total = 0
+    for _root, _dirs, files in os.walk(path):
+        total += len(files)
+    return total
+
+
 LANG_EXTENSIONS = {
     ".py": "python",
     ".go": "go",
@@ -433,16 +447,21 @@ def analyze_file(filepath: str) -> dict | None:
     }
 
 
-def analyze_target(target: str) -> dict:
+def analyze_target(target: str, allow_ignored=()) -> dict:
     """Analyze a file or directory."""
     results = []
+    skipped: dict[str, int] = {}
     if os.path.isfile(target):
         r = analyze_file(target)
         if r:
             results.append(r)
     elif os.path.isdir(target):
+        blocked, _allowed = active_ignore_dirs(allow_ignored)
         for root, dirs, files in os.walk(target):
-            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+            for d in [x for x in dirs if x in blocked]:
+                n = _count_files_under(os.path.join(root, d))
+                skipped[d] = skipped.get(d, 0) + n
+            dirs[:] = [d for d in dirs if d not in blocked]
             for fname in sorted(files):
                 fpath = os.path.join(root, fname)
                 ext = Path(fname).suffix.lower()
@@ -488,6 +507,9 @@ def analyze_target(target: str) -> dict:
     return {
         "target": target,
         "files_analyzed": len(results),
+        "skipped_dirs": dict(sorted(skipped.items())),
+        "skipped_files_total": sum(skipped.values()),
+        "ignore_dirs_allowed": sorted(active_ignore_dirs(allow_ignored)[1]),
         "total_logical_loc": total_loc,
         "average_mi": round(avg_mi, 2),
         "average_cc": round(avg_cc, 2),
@@ -518,6 +540,13 @@ Examples:
         "--min-cc", type=int, default=0, help="Only show functions with CC >= N"
     )
     parser.add_argument("--quiet", action="store_true", help="Only show summary")
+    parser.add_argument(
+        "--allow-ignored-dir",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Un-ignore a directory name (repeatable); its files are scanned again",
+    )
 
     args = parser.parse_args()
 
@@ -526,7 +555,7 @@ Examples:
         sys.exit(1)
 
     target = args.file or args.target
-    result = analyze_target(target)
+    result = analyze_target(target, args.allow_ignored_dir)
 
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
@@ -549,6 +578,15 @@ Examples:
         print(f"{'=' * 60}")
         print(f"  Target:           {result['target']}")
         print(f"  Files analyzed:   {result['files_analyzed']}")
+        _skipped = result.get("skipped_dirs") or {}
+        if _skipped:
+            _detail = ", ".join(f"{k}={v}" for k, v in sorted(_skipped.items()))
+            print(f"  Skipped dirs:     {_detail}")
+            print(
+                "                    "
+                f"({sum(_skipped.values())} 个文件一个字没读；"
+                "需要看时用 --allow-ignored-dir NAME 解除)"
+            )
         print(f"  Total LOC:        {result['total_logical_loc']}")
         print(
             f"  Average MI:       {result['average_mi']} ({'🟢' if result['average_mi'] > 20 else '🟡' if result['average_mi'] >= 10 else '🔴'})"

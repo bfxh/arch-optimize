@@ -165,7 +165,7 @@
 
 下面这张表描述的是 `scripts/risk_diagnose.py` **实际**的判据与盲区。每张风险卡下的"检测阈值"是概念定义（人工判定用），两者不总是一致；不一致时以本节为准来解释脚本输出。
 
-**先确认各阶段看到的是同一批文件**：四个扫描脚本的忽略目录表现在是同一张 17 项表（`.git/node_modules/vendor/__pycache__/.cache/dist/build/target/.venv/venv/env/testdata/.idea/.vscode/.next/.nuxt/coverage`），由 `_check_ignore_dirs_identical` 逐字钉住。改前四张表各不同，且 `quality_metrics` 连 `venv` 都不过滤——实测在一个 4 目录 fixture 上它把 4 个文件全算进分析集（健康分 80），现在只算 `pkg` 的 1 个（95）。语言表仍有一处有意的差异：`.java/.kt` 只被 `arch_scan` 与 `quality_metrics` 收录，`dep_graph`/`risk_diagnose` 没有这两个语种的判据所以不认——由 `_check_language_tables` 钉成"只允许差这一条"。
+**先确认各阶段看到的是同一批文件**：四个扫描脚本的忽略目录表现在是同一张 17 项表（`.git/node_modules/vendor/__pycache__/.cache/dist/build/target/.venv/venv/env/testdata/.idea/.vscode/.next/.nuxt/coverage`），由 `_check_ignore_dirs_identical` 逐字钉住。改前四张表各不同，且 `quality_metrics` 连 `venv` 都不过滤——实测在一个 4 目录 fixture 上它把 4 个文件全算进分析集（健康分 80），现在只算 `pkg` 的 1 个（95）。同一时间加上的披露面：每个脚本的输出都带 `skipped_dirs`/`skipped_files_total`/`ignore_dirs_allowed`（实测一个 `src` + `venv`(3 文件) + `node_modules`(1 文件) 的 fixture：四个脚本一律报 `{'node_modules': 1, 'venv': 3}`、总数 4；`--allow-ignored-dir venv` 后 risk_diagnose 从 1 个文件变 4 个、`ignore_dirs_allowed` 记成 `['venv']`）。语言表仍有一处有意的差异：`.java/.kt` 只被 `arch_scan` 与 `quality_metrics` 收录，`dep_graph`/`risk_diagnose` 没有这两个语种的判据所以不认——由 `_check_language_tables` 钉成"只允许差这一条"。
 
 | 风险 | 实现位置 | 脚本真正在量什么 | 已确认的盲区 / 误报源 |
 |------|----------|------------------|------------------------|

@@ -209,16 +209,37 @@ ALGO_MARKERS = (
 # ── File discovery & source reading ─────────────────────────────────
 
 
-def discover_files(target):
-    """Yield (filepath, lang) for every supported source file under target."""
+def active_ignore_dirs(allow_ignored):
+    """被 --allow-ignored-dir 解除的目录名不再过滤。"""
+    allowed = {a.strip() for a in (allow_ignored or ()) if a.strip()}
+    return {d for d in IGNORE_DIRS if d not in allowed}, allowed
+
+
+def _count_files_under(path):
+    total = 0
+    for _root, _dirs, files in os.walk(path):
+        total += len(files)
+    return total
+
+
+def discover_files(target, allow_ignored=(), skipped=None):
+    """Yield (filepath, lang) for every supported source file under target.
+
+    被 IGNORE_DIRS 剔掉的目录会把文件数记进 `skipped`——否则
+    "0 条发现" 和"这个子树一个字都没看"在输出里长得一样。"""
     if os.path.isfile(target):
         ext = Path(target).suffix.lower()
         lang = LANG_EXTENSIONS.get(ext)
         if lang:
             yield target, lang
         return
+    blocked, _allowed = active_ignore_dirs(allow_ignored)
     for root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+        for d in [x for x in dirs if x in blocked]:
+            if skipped is not None:
+                n = _count_files_under(os.path.join(root, d))
+                skipped[d] = skipped.get(d, 0) + n
+        dirs[:] = [d for d in dirs if d not in blocked]
         for fname in sorted(files):
             ext = Path(fname).suffix.lower()
             lang = LANG_EXTENSIONS.get(ext)
@@ -1435,13 +1456,14 @@ def compute_health_impact(findings, scanned_lines=0):
     }
 
 
-def diagnose(target, risks, min_severity):
+def diagnose(target, risks, min_severity, allow_ignored=()):
     """Run selected risk detectors across all files and return a full report."""
     files_data = []  # (filepath, lang, source, rel)
+    skipped = {}
     import_edges = []  # (src_rel, imported_module_or_resolved)
     rel_files = set()
 
-    for filepath, lang in discover_files(target):
+    for filepath, lang in discover_files(target, allow_ignored, skipped):
         source = read_source(filepath)
         if not source:
             continue
@@ -1501,6 +1523,9 @@ def diagnose(target, risks, min_severity):
     return {
         "target": target,
         "files_analyzed": len(files_data),
+        "skipped_dirs": dict(sorted(skipped.items())),
+        "skipped_files_total": sum(skipped.values()),
+        "ignore_dirs_allowed": sorted(active_ignore_dirs(allow_ignored)[1]),
         "risks_scanned": sorted(risks),
         "total_findings": len(all_findings),
         "health_score": health,
@@ -1532,9 +1557,22 @@ def render_human(report):
     print(f"  Warning:         {hs['warning']}")
     print(f"  Suggestion:      {hs['suggestion']}")
     print(f"  Total findings:  {report['total_findings']}")
+    skipped = report.get("skipped_dirs") or {}
+    if skipped:
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(skipped.items()))
+        print(f"  Skipped dirs:    {detail}")
+        print(
+            f"                   ({sum(skipped.values())} 个文件一个字没读；需要看时用 --allow-ignored-dir NAME 解除)",
+            flush=True,
+        )
 
     if not report["findings"]:
-        print("\n  No findings matching the filter. Architecture looks healthy.\n")
+        if skipped:
+            print(
+                "\n  无发现≠无问题：上面这些目录被跳过，别把这个结果当成「很健康」。\n"
+            )
+        else:
+            print("\n  No findings matching the filter.\n")
         print(f"{bar}\n")
         return
 
@@ -1571,6 +1609,13 @@ Examples:
     )
     parser.add_argument("--file", help="Analyze a single file")
     parser.add_argument("--target", help="Analyze a directory")
+    parser.add_argument(
+        "--allow-ignored-dir",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Un-ignore a directory name (repeatable); its files are scanned again",
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument(
         "--risk",
@@ -1592,7 +1637,7 @@ Examples:
 
     target = args.file or args.target
     risks = args.risk if args.risk else ["R1", "R2", "R3", "R4", "R5", "R6"]
-    report = diagnose(target, risks, args.min_severity)
+    report = diagnose(target, risks, args.min_severity, args.allow_ignored_dir)
 
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))

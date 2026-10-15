@@ -147,10 +147,10 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 
 | 脚本 | 阶段 | 实际参数（`--help` 为准） | 输出 |
 |------|------|---------------------------|------|
-| `arch_scan.py` | 一 | `--target`（必填）`--json --depth N`（默认 5） | 目录树、入口点、技术栈、目录级模块 fan-in/out |
-| `dep_graph.py` | 一 | `--target`（必填）`--json --output F --format mermaid\|dot --max-depth N` | 一级目录级依赖图、环、Mermaid/DOT |
-| `risk_diagnose.py` | 二 | `--target` 或 `--file`，`--json --risk R1..R6`（可重复）`--min-severity` | R1-R6 四段式发现 + 健康分 |
-| `quality_metrics.py` | 三 | `--target` 或 `--file`，`--json --min-cc N --quiet` | MI/CC/HV/健康分/热点 |
+| `arch_scan.py` | 一 | `--target`（必填）`--json --depth N`（默认 5）`--allow-ignored-dir NAME` | 目录树、入口点、技术栈、目录级模块 fan-in/out |
+| `dep_graph.py` | 一 | `--target`（必填）`--json --output F --format mermaid\|dot --max-depth N` `--allow-ignored-dir NAME` | 一级目录级依赖图、环、Mermaid/DOT |
+| `risk_diagnose.py` | 二 | `--target` 或 `--file`，`--json --risk R1..R6`（可重复）`--min-severity` `--allow-ignored-dir NAME` | R1-R6 四段式发现 + 健康分 |
+| `quality_metrics.py` | 三 | `--target` 或 `--file`，`--json --min-cc N --quiet` `--allow-ignored-dir NAME` | MI/CC/HV/健康分/热点 |
 | `regression_guard.py` | 五 | 子命令 `record --output F [--test-cmd S] [--cwd D]` / `compare --baseline F --current F [--json] [--allow-removed N] [--allow-removed-file P]` / `evoscore --history F [--gamma G] [--json]` | 测试基线、回归对比（含测试消失判定）、迭代分 |
 
 阶段零（设计判断）和阶段四（增量优化）都是方法论，无脚本：七类提问与五段式契约见 `references/design-review.md`，双智能体流程见 `references/collaboration-workflow.md`。
@@ -167,7 +167,7 @@ python scripts/regression_guard.py compare --baseline <基线.json> --current <�
 
 以下每一条都是实测确认的行为，不是理论上的可能：
 
-1. **空结果 ≠ 没问题**。R2/R3/R5/R6 的盲区都以"静默返回 0 条"的形式出现，不报错也不降级。
+1. **空结果 ≠ 没问题**。R2/R3/R5/R6 的盲区都以"静默返回 0 条"的形式出现，不报错也不降级。其中一条本轮收敛成**可见信息**：四个扫描脚本都输出 `skipped_dirs`（每个被忽略目录 → 里面有多少文件一个字没读）、`skipped_files_total`、`ignore_dirs_allowed`，人读输出也打印同样的明细；`risk_diagnose` 在有跳过目录时不再打印"looks healthy"式结论。项目里 `env`/`testdata` 是真源码时用 `--allow-ignored-dir NAME`（可重复）放回分析集，而不是去改脚本里的表。
 2. **R5 的包内循环已能检出（本轮修）**：`from . import x`、`from .sub import y`、`from ..x import y` 现在都解析到仓库内文件并参与建环，实测两文件互导报 1 条 Critical，单向相对导入不误报。**仍然存在的口径差**：`dep_graph` 按目录级建图，相对导入不给它建边（同目录互导实测 edges=0），所以 dep_graph 报 0 环不等于 R5 报 0 环——两道要分别看。另有两处**不可观测**的防御代码：`detect_r5` 的 `seen_cycles` 去重（实测 20000 个随机依赖图 0 次触发；把它删掉后，本轮 4 个验证语料（本仓 + 3 个环 fixture）的输出逐条一致）与相对导入候选里对 `*` 的过滤——它们只是换遍历方式时的保险，别当成已验证的去重能力。
 3. **R5 的基础设施判定是词边界匹配，不是子串**：`costs`/`post`/`host`/`netlog` 不会再被判成"领域层依赖基础设施"（改前 6 个非基础设施名里 4 个误报 Critical，实测已归零）。代价是**长名字须显式登记**：`sqlalchemy` 这类现在靠标记表里显式那条才认得，如果你的项目用了别的 DB 驱动（如 `mysql`/`aiomysql`），它不会自动命中——需要时直接往 `INFRA_MARKERS` 加一行。
 4. **R3 的跨上下文条目是"可能"不是"定论"**：同一份代码放同目录出 Critical、放不同目录出 Warning（都报了，严重度分层）。跨上下文那档脚本分不出"复制粘贴的同一决策"与"各模块独立演化的相似 util"——remedy 里会让你二选一，别直接照搬。字面量档已改为聚合上报（改前 51 个不同字面量＝51 条 Critical＝765 分扣分，现在＝1 条）；代价是健康分不再区分"3 个值"和"51 个值"，量级要看这条发现自带的 `metrics.distinct_literals`/`total_uses`。
