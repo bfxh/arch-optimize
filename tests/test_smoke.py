@@ -233,6 +233,52 @@ def _check_self_scan_claims():
     )
     assert diag["health_score"]["critical"] > 0, "README 说 risk_diagnose 侧有 Critical"
 
+    _verify_readme_self_scan_claims(data, diag)
+
+
+def _verify_readme_self_scan_claims(qm, diag):
+    """README 自扫段落里的条数与 MI 区间必须能由这两个脚本当场复算。"""
+    import re
+
+    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:
+        readme = fh.read()
+    m = re.search(
+        r"`risk_diagnose` from (\d+) Critical \+ (\d+) Warning and "
+        r"`quality_metrics` from (\d+) Critical \+ (\d+) Warning",
+        readme,
+    )
+    assert m, "README 的自扫条数句式变了，这条复算断言失效（请同步本检查与 README）"
+    claimed = tuple(int(x) for x in m.groups())
+    actual = (
+        diag["health_score"]["critical"],
+        diag["health_score"]["warning"],
+        qm["health_score"]["critical"],
+        qm["health_score"]["warning"],
+    )
+    assert claimed == actual, (
+        f"README 自扫条数写的是 {claimed}，实测 {actual}——改脚本必须同批改 README"
+    )
+
+    rng = re.search(r"below the 15 gate \(([\d.]+)[\u2013-]([\d.]+)\)", readme)
+    assert rng, "README 的 MI 区间写法变了，这条复算断言失效"
+    scanners = {
+        "arch_scan.py",
+        "dep_graph.py",
+        "quality_metrics.py",
+        "risk_diagnose.py",
+        "regression_guard.py",
+    }
+    mis = [
+        f["maintainability_index"]
+        for f in qm["files"]
+        if os.path.basename(f["file"]) in scanners
+    ]
+    assert len(mis) == 5, f"应复算 5 个扫描器的 MI，实际 {len(mis)} 个"
+    lo, hi = float(rng.group(1)), float(rng.group(2))
+    assert abs(min(mis) - lo) < 0.05 and abs(max(mis) - hi) < 0.05, (
+        f"README 说 MI 区间 {lo}–{hi}，实测 {min(mis)}–{max(mis)}"
+    )
+
 
 def _load_json(path):
     with open(path, encoding="utf-8") as fh:
@@ -794,6 +840,345 @@ def _check_cli_surface_matches_docs():
                     )
 
 
+CANONICAL_IGNORE_DIRS = {
+    ".git",
+    "node_modules",
+    "vendor",
+    "__pycache__",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    ".venv",
+    "venv",
+    "env",
+    "testdata",
+    ".idea",
+    ".vscode",
+    ".next",
+    ".nuxt",
+    "coverage",
+}
+
+
+SCANNER_SCRIPTS = ("arch_scan", "dep_graph", "risk_diagnose", "quality_metrics")
+
+
+def _module_literal(name, var):
+    """从脚本源码取模块级字面量。
+
+    走 AST 而不是 import：import 会被 sys.modules 缓存住，改文件后同进程再读还是旧值，
+    这类"表是否一致"的断言就骗得过变异测试。
+    """
+    import ast
+
+    path = os.path.join(SCRIPTS, f"{name}.py")
+    with open(path, encoding="utf-8") as fh:
+        src = fh.read()
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == var for t in node.targets
+        ):
+            return ast.literal_eval(node.value), src
+    raise AssertionError(f"{name}.py 没有模块级 {var} 字面量")
+
+
+def _check_ignore_dirs_identical():
+    """四个扫描器必须用同一张忽略目录表，否则同一个 --target 看到的不同文件集不可比。"""
+    for name in SCANNER_SCRIPTS:
+        table, src = _module_literal(name, "IGNORE_DIRS")
+        assert isinstance(table, set), f"{name} 的 IGNORE_DIRS 不是集合"
+        assert table == CANONICAL_IGNORE_DIRS, (
+            f"{name} 的忽略目录表与其余脚本不一致：多 {sorted(table - CANONICAL_IGNORE_DIRS)}，"
+            f"少 {sorted(CANONICAL_IGNORE_DIRS - table)}"
+        )
+        assert "not in IGNORE_DIRS" in src, (
+            f"{name} 定义了 IGNORE_DIRS 但没有用它过滤目录（目录遍历漏了过滤）"
+        )
+
+
+def _check_ignored_dirs_excluded_from_scan():
+    """venv/testdata/env 里的代码不得进任何阶段的文件集，尤其不得污染健康分。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-ignore-")
+    long_body = "\n".join(f"    x = x + {i}" for i in range(60))
+    src = f"def f(x):\n{long_body}\n    return x\n"
+    try:
+        for sub in ("pkg", "venv", "testdata", "env"):
+            os.makedirs(os.path.join(out_dir, sub), exist_ok=True)
+            with open(os.path.join(out_dir, sub, "m.py"), "w", encoding="utf-8") as fh:
+                fh.write(src)
+        qm = run_script("quality_metrics.py", "--target", out_dir, "--json")
+        rd = run_script("risk_diagnose.py", "--target", out_dir, "--json")
+        asc = run_script("arch_scan.py", "--target", out_dir, "--json")
+        dg = run_script("dep_graph.py", "--target", out_dir, "--json")
+        assert qm["files_analyzed"] == 1, (
+            f"quality_metrics 只该看到 pkg 的 1 个文件，实际 {qm['files_analyzed']}"
+            f"（{[f['file'] for f in qm['files']]}）"
+        )
+        assert rd["files_analyzed"] == 1, (
+            f"risk_diagnose 只该看到 1 个文件，实际 {rd['files_analyzed']}"
+        )
+        names = [m["name"] for m in asc["modules"]]
+        assert "venv" not in names and "testdata" not in names and "env" not in names, (
+            f"arch_scan 把被忽略目录报成模块：{names}"
+        )
+        dg_names = [m["name"] for m in dg["modules"]]
+        assert dg_names == ["pkg"], f"dep_graph 的模块集不该含被忽略目录：{dg_names}"
+        # 两个计分器用的是不同判据（分数不可比），但同一文件集必须看到同样的行数
+        assert (
+            qm["health_score"]["scanned_lines"] == rd["health_score"]["scanned_lines"]
+        ), (
+            f"两个计分器看到的文件集不一致：qm {qm['health_score']['scanned_lines']} 行 vs "
+            f"rd {rd['health_score']['scanned_lines']} 行"
+        )
+        assert all("/pkg/" in f["file"].replace("\\", "/") for f in qm["files"]), (
+            f"quality_metrics 的分析集混进了被忽略目录：{[f['file'] for f in qm['files']]}"
+        )
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _base(location: str) -> str:
+    """发现位置串形如 pkg/main.py:f:1 —— 取文件名的末段用于按文件归类。"""
+    return location.split(":")[0].replace("\\", "/").split("/")[-1]
+
+
+def _check_r2_fanout_fires():
+    """R2 的阈值判据必须真能判红，并钉住「按顶层包归一」这一口径。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-r2-")
+    wide = (
+        "\n".join(f"import dep{i}\n" for i in range(5)) + "\ndef f():\n    return 1\n"
+    )
+    crit = (
+        "\n".join(f"import dep{i}\n" for i in range(8)) + "\ndef f():\n    return 1\n"
+    )
+    sibling = (
+        "\n".join(f"from pkg.sub{i} import X\n" for i in range(8))
+        + "\ndef f():\n    return 1\n"
+    )
+    cases = [
+        ("warning.py", wide, "Warning"),
+        ("critical.py", crit, "Critical"),
+        ("sibling.py", sibling, None),
+    ]
+    try:
+        for name, src, _ in cases:
+            with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
+                fh.write(src)
+        data = run_script("risk_diagnose.py", "--target", out_dir, "--json")
+        by_file = {}
+        for f in data["findings"]:
+            if f["risk"] == "R2":
+                by_file[_base(f["location"])] = f["severity"]
+        assert by_file.get("warning.py") == "Warning", (
+            f"5 个外部依赖应判 Warning，实际 {by_file}"
+        )
+        assert by_file.get("critical.py") == "Critical", (
+            f"8 个外部依赖应判 Critical，实际 {by_file}"
+        )
+        assert "sibling.py" not in by_file, (
+            f"同一顶层包下的 8 条兄弟模块 import 归一后算 1 个依赖，不该报，实际 {by_file}"
+        )
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _check_r4_abstraction_fires():
+    """R4 的抽象判据必须真能判红，并钉住它只认 ABC/Protocol/Abstract* 命名这一窄口径。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-r4-")
+    abc_src = (
+        "from abc import ABC, abstractmethod\n"
+        "class Store(ABC):\n"
+        "    @abstractmethod\n"
+        "    def save(self, x):\n"
+        "        ...\n"
+        "class PgStore(Store):\n"
+        "    def save(self, x):\n"
+        "        return x\n"
+    )
+    plain_src = (
+        "class Base:\n"
+        "    def go(self):\n"
+        "        raise NotImplementedError\n"
+        "class Only(Base):\n"
+        "    def go(self):\n"
+        "        return 1\n"
+    )
+    cc_src = "def f(a):\n" + "".join(
+        f"    if a == {i}:\n        return {i}\n" for i in range(25)
+    )
+    try:
+        for name, src in (
+            ("abc_one.py", abc_src),
+            ("plain_one.py", plain_src),
+            ("big_cc.py", cc_src),
+        ):
+            with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
+                fh.write(src)
+        data = run_script("risk_diagnose.py", "--target", out_dir, "--json")
+        files = {_base(f["location"]) for f in data["findings"] if f["risk"] == "R4"}
+        assert "abc_one.py" in files, f"ABC + 唯一实现应判 R4，实际 {sorted(files)}"
+        assert "big_cc.py" in files, (
+            f"CC=26 (>20) 应判 R4 Critical，实际 {sorted(files)}"
+        )
+        assert "plain_one.py" not in files, (
+            f"R4 目前只认基类名含 ABC/Protocol/Abstract* 的抽象；plain 接口写法是已知盲区，"
+            f"若这条开始报了说明判据被放宽，须同步改文档口径。实际 {sorted(files)}"
+        )
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _check_language_tables():
+    """语言表允许不同，但差异必须恰好是登记过的那一条：dep_graph/risk_diagnose 不认 .java/.kt。"""
+    tabs = {}
+    for name in SCANNER_SCRIPTS:
+        table, _ = _module_literal(name, "LANG_EXTENSIONS")
+        tabs[name] = set(table.keys())
+    union = set().union(*tabs.values())
+    for name, table in tabs.items():
+        assert table, f"{name} 的 LANG_EXTENSIONS 为空"
+        missing = union - table
+        assert missing <= {".java", ".kt"}, (
+            f"{name} 的语言表缺未登记的语种扩展：{sorted(missing)}"
+        )
+    jvm = {n for n, t in tabs.items() if {".java", ".kt"} <= t}
+    assert jvm == {"arch_scan", "quality_metrics"}, (
+        f".java/.kt 只该被 arch_scan 与 quality_metrics 收录，实际 {sorted(jvm)}"
+    )
+
+
+def _check_r3_magic_literal_aggregation():
+    """字面量重复是"一个决策"，必须聚成一条；但量级要能被机读，且判据不许被放宽。"""
+    out_dir = tempfile.mkdtemp(prefix="arch-opt-r3mag-")
+    os.makedirs(os.path.join(out_dir, "a"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "b"), exist_ok=True)
+
+    def pair(vals):
+        for sub in ("a", "b"):
+            body = "\n".join(f"V{i} = {v} + {v} + {v}" for i, v in enumerate(vals))
+            with open(os.path.join(out_dir, sub, "m.py"), "w", encoding="utf-8") as fh:
+                fh.write(body + "\n")
+
+    def magic_findings():
+        data = run_script("risk_diagnose.py", "--target", out_dir, "--json")
+        return [f for f in data["findings"] if ":magic:" in f["location"]]
+
+    try:
+        pair(list(range(10, 61)))  # 51 个不同值 × 3 处 × 2 文件
+        lit = magic_findings()
+        assert len(lit) == 1, f"51 个不同字面量该聚成 1 条，实际 {len(lit)} 条"
+        m = lit[0]["metrics"]
+        assert m["distinct_literals"] == 51, m
+        assert m["total_uses"] == 306, m
+        assert m["files_involved"] == 2, m
+        assert [t["uses"] for t in m["top_values"]] == sorted(
+            (t["uses"] for t in m["top_values"]), reverse=True
+        ), "top_values 必须按出现次数降序"
+        assert len(m["top_values"]) == 10, m["top_values"]
+
+        pair([100, 200, 300])  # 3 个值：同样一条，不因量小变成 3 条
+        lit = magic_findings()
+        assert len(lit) == 1, f"3 个不同字面量也该聚成 1 条，实际 {len(lit)} 条"
+        assert lit[0]["metrics"]["distinct_literals"] == 3, lit[0]["metrics"]
+
+        # 判据不放宽：同一文件内重复（不跨文件）不该报
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("X = 100 + 100 + 100\nY = 200 + 200 + 200\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("Z = 1\n")
+        assert magic_findings() == [], "跨文件条件不满足时不该报"
+
+        # 每文件只出现 1 次、共 2 处（<3）也不该报
+        for sub in ("a", "b"):
+            with open(os.path.join(out_dir, sub, "m.py"), "w", encoding="utf-8") as fh:
+                fh.write("Q = 7\nR = 7\n")
+        assert magic_findings() == [], "总次数 <3 时不该报"
+
+        # 门槛是"同一个值出现 ≥3 次"：只出现 2 次（哪怕跨 2 文件）不该报
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("A = 1234\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("B = 1234\n")
+        assert magic_findings() == [], "同一值只出现 2 次时不该报（门槛 ≥3 次）"
+
+        # 两个值各出现 2 次、合计 4 次——仍不该报（门槛按单值计）
+        with open(os.path.join(out_dir, "a", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("A = 5000\nA2 = 5000\n")
+        with open(os.path.join(out_dir, "b", "m.py"), "w", encoding="utf-8") as fh:
+            fh.write("B = 6000\nB2 = 6000\n")
+        assert magic_findings() == [], "门槛按单值出现次数计，不该被跨值合计凑出来"
+
+        # 报出来的 top_values 里不许出现 <3 次的值
+        pair([100, 200, 300, 400, 500])
+        lit = magic_findings()
+        assert lit, "5 个值各 3 次跨 2 文件必须报"
+        assert all(v["uses"] >= 3 for v in lit[0]["metrics"]["top_values"]), (
+            f"报告里不该出现 <3 次的值：{lit[0]['metrics']['top_values']}"
+        )
+        assert lit[0]["metrics"]["total_uses"] == 30, lit[0]["metrics"]
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def _check_design_review_contract():
+    """设计评审层必须存在、七类齐全、五段契约齐全，且没有孤儿参考文档。"""
+    ref_dir = os.path.join(ROOT, "references")
+    design_path = os.path.join(ref_dir, "design-review.md")
+    assert os.path.exists(design_path), (
+        "references/design-review.md 缺失（阶段零的定义来源）"
+    )
+
+    with open(design_path, encoding="utf-8") as fh:
+        text = fh.read()
+
+    seven = (
+        "### 1. 变化边界画错",
+        "### 2. 耦合的方向与强度",
+        "### 3. 抽象的层次与位置",
+        "### 4. 不变量归属",
+        "### 5. 演化能力与可逆性",
+        "### 6. 概念到代码的映射保真（统一语言）",
+        "### 7. 一致性与单一事实源",
+    )
+    missing = [c for c in seven if c not in text]
+    assert not missing, f"design-review.md 七类设计问题缺标题 {missing}"
+
+    contract = (
+        "1. **决策是什么**",
+        "2. **代价与收益**",
+        "3. **我赌它错的依据**",
+        "4. **若 X 变更发生会怎样**",
+        "5. **为什么脚本看不到它**",
+    )
+    missing = [c for c in contract if c not in text]
+    assert not missing, f"design-review.md 五段式发现契约缺项 {missing}"
+
+    with open(os.path.join(ROOT, "SKILL.md"), encoding="utf-8") as fh:
+        skill = fh.read()
+
+    for name in sorted(os.listdir(ref_dir)):
+        assert name in skill, f"references/{name} 未被 SKILL.md 索引（按需加载会失效）"
+
+    assert "### 阶段零：设计判断" in skill, "SKILL.md 缺少阶段零：设计判断章节"
+    assert skill.count("线索生成器") >= 2, "SKILL.md 未把 R1-R6/健康分定位为线索生成器"
+    assert "零条发现" in skill, "SKILL.md 未声明『最重的设计问题往往零条发现』"
+
+
+def _check_all_assertions_wired():
+    """每个 _check_* 都必须被 test_smoke 调用——写了但没接线的断言等于不存在。"""
+    import re
+
+    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        src = fh.read()
+    defined = set(re.findall(r"^def (_check_\w+)", src, re.M))
+    wired = set(re.findall(r"^        (_check_\w+)\(", src, re.M))
+    orphan = sorted(defined - wired)
+    assert not orphan, f"以下检查已定义但没接进 test_smoke()，不会运行：{orphan}"
+    ghost = sorted(wired - defined)
+    assert not ghost, f"test_smoke() 调用了不存在的检查：{ghost}"
+
+
 def test_smoke(tmp_path=None):
     sample = make_sample_project()
     try:
@@ -809,6 +1194,14 @@ def test_smoke(tmp_path=None):
         _check_r6_anemic_detector()
         _check_cli_surface_matches_docs()
         _check_self_scan_claims()
+        _check_ignore_dirs_identical()
+        _check_language_tables()
+        _check_ignored_dirs_excluded_from_scan()
+        _check_r2_fanout_fires()
+        _check_r4_abstraction_fires()
+        _check_r3_magic_literal_aggregation()
+        _check_design_review_contract()
+        _check_all_assertions_wired()
     finally:
         shutil.rmtree(sample, ignore_errors=True)
 

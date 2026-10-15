@@ -39,6 +39,14 @@ IGNORE_DIRS = {
     "build",
     "target",
     ".venv",
+    "venv",
+    "env",
+    "testdata",
+    ".idea",
+    ".vscode",
+    ".next",
+    ".nuxt",
+    "coverage",
 }
 
 LANG_EXTENSIONS = {
