@@ -339,21 +339,20 @@ def compare_results(
         else 100.0
     )
 
-    # Non-asymmetric scoring
     baseline_pass = baseline.get(
         "passed", sum(1 for r in base_tests.values() if r["status"] == "pass")
     )
     new_pass = current.get(
         "passed", sum(1 for r in curr_tests.values() if r["status"] == "pass")
     )
-    target_pass = baseline_pass + max(1, len(new_tests))
 
-    if new_pass >= baseline_pass and target_pass > baseline_pass:
-        improvement_score = (new_pass - baseline_pass) / (target_pass - baseline_pass)
-    else:
-        improvement_score = 0.0
-    regression_penalty = regression_count / baseline_pass if baseline_pass > 0 else 0.0
-    total_score = improvement_score - regression_penalty * 2
+    # Asymmetric score (bounded, mirrors references/regression-guard.md §四)
+    # Both terms are normalized by baseline_pass so the ×2 asymmetry means
+    # exactly "弄坏一条的代价 = 修好一条的两倍"，不随用例绝对数量漂移。
+    denom = max(baseline_pass, 1)
+    gain = max(0.0, (new_pass - baseline_pass) / denom)
+    damage = (regression_count + len(unexplained_removed_pass)) / denom
+    total_score = max(-1.0, min(1.0, gain - 2.0 * damage))
 
     # Health score (soft gate): 100 - 15*Critical - 5*Warning
     critical = regression_count + len(unexplained_removed_pass)
